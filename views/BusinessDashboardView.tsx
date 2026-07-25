@@ -14,7 +14,11 @@ import { CATEGORIES } from '@/lib/data';
 import { isRevenueOrder, orderChannel } from '@/lib/revenue';
 import { deriveSubscription, SUBSCRIPTION_TRIAL_DAYS } from '@/lib/subscription';
 import TrendChart from '@/components/TrendChart';
-import { buildBuckets, bucketIndexFor, PERIOD_META, shortMoney, type Period } from '@/lib/dashboardPeriod';
+import {
+  buildBuckets, bucketIndexFor, PERIOD_META, shortMoney,
+  buildReportBuckets, currentPeriodRange, type Period,
+} from '@/lib/dashboardPeriod';
+import { buildDashboardReportHtml, openReportForPrint, reportFileName } from '@/lib/dashboardReport';
 import type { Order, Product } from '@/lib/types';
 
 /**
@@ -44,7 +48,7 @@ export default function BusinessDashboardView() {
   const actor = useStoreActor();
   const currentSupplier = actor.store;
   const authLoading = actor.loading;
-  const { state } = useApp();
+  const { state, toast } = useApp();
   const supplierId = actor.storeId;
   const sub = useMemo(() => deriveSubscription(currentSupplier), [currentSupplier]);
 
@@ -261,6 +265,105 @@ export default function BusinessDashboardView() {
     [myOrders]
   );
 
+  /* ── PDF export ──────────────────────────────────────────────
+     The chart shows a trend, but a downloaded report is about ONE period:
+     Daily → that day, Weekly → that week, Monthly → that month, Yearly →
+     that year. So the report re-buckets from scratch rather than reusing the
+     on-screen series. */
+  const [exporting, setExporting] = useState(false);
+
+  const downloadReport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const now     = new Date();
+      const range   = currentPeriodRange(period, now);
+      const subs    = buildReportBuckets(period, now);
+
+      const inRange = myOrders.filter(o => {
+        const t = new Date(o.createdAt).getTime();
+        return t >= range.start.getTime() && t < range.end.getTime();
+      });
+
+      const rows = subs.map(b => ({ label: b.label, orders: 0, units: 0, revenue: 0, cost: 0, profit: 0 }));
+      for (const o of inRange) {
+        const i = bucketIndexFor(new Date(o.createdAt), subs);
+        if (i < 0) continue;
+        rows[i].orders  += 1;
+        rows[i].units   += orderUnits(o);
+        rows[i].revenue += orderRevenue(o);
+        rows[i].cost    += orderCost(o);
+        rows[i].profit  += orderProfit(o);
+      }
+
+      const rTotals = rows.reduce((t, r) => ({
+        revenue: t.revenue + r.revenue, cost: t.cost + r.cost, profit: t.profit + r.profit,
+        orders:  t.orders  + r.orders,  units: t.units + r.units,
+      }), { revenue: 0, cost: 0, profit: 0, orders: 0, units: 0 });
+
+      // Top products + categories, recomputed for the reported period.
+      const tally = new Map<number, { name: string; units: number; revenue: number }>();
+      const cats  = new Map<string, number>();
+      for (const o of inRange) {
+        for (const it of (o.items ?? [])) {
+          if (!myProductIds.has(it.id)) continue;
+          const p = prodById.get(it.id);
+          if (!p) continue;
+          const qty  = Number(it.qty) || 0;
+          const line = (p.price ?? 0) * qty;
+          const row  = tally.get(it.id) ?? { name: p.name, units: 0, revenue: 0 };
+          row.units += qty; row.revenue += line;
+          tally.set(it.id, row);
+          cats.set(p.category, (cats.get(p.category) ?? 0) + line);
+        }
+      }
+
+      // Wallet figures are a nice-to-have; a failure here must not block the report.
+      let payments: { online: number; cash: number; paidOut: number; pending: number; balance: number } | undefined;
+      if (supplierId != null) {
+        try {
+          const res = await fetch(`/api/payouts?supplierId=${supplierId}`, { headers: await authHeaders(), cache: 'no-store' });
+          if (res.ok) {
+            const w = await res.json();
+            payments = {
+              online: w.onlineTotal ?? 0, cash: w.cashTotal ?? 0,
+              paidOut: w.paidOut ?? 0, pending: w.pending ?? 0, balance: w.balance ?? 0,
+            };
+          }
+        } catch { /* report still worth producing without it */ }
+      }
+
+      const storeName = currentSupplier?.name ?? 'My store';
+      const html = buildDashboardReportHtml({
+        storeName,
+        periodLabel:  PERIOD_META[period].label,
+        rangeLabel:   range.label,
+        channelLabel: channel === 'online' ? 'Online sales' : channel === 'pos' ? 'In-store sales' : 'All sales',
+        generatedAt:  now,
+        totals: {
+          ...rTotals,
+          avgOrder:  rTotals.orders > 0 ? rTotals.revenue / rTotals.orders : 0,
+          marginPct: rTotals.revenue > 0 ? Math.round((rTotals.profit / rTotals.revenue) * 100) : 0,
+        },
+        // An all-zero hourly grid is noise; drop empty rows for the daily view.
+        rows: period === 'day' ? rows.filter(r => r.orders > 0) : rows,
+        topProducts: Array.from(tally.values()).sort((a, b) => b.units - a.units).slice(0, 10),
+        categories:  CATEGORIES
+          .map(c => ({ name: c.name, revenue: cats.get(c.id) ?? 0 }))
+          .filter(c => c.revenue > 0)
+          .sort((a, b) => b.revenue - a.revenue),
+        payments,
+      });
+
+      const ok = openReportForPrint(html, reportFileName(storeName, PERIOD_META[period].label, now));
+      if (!ok) toast('Allow pop-ups for this site to download the report', 'error');
+    } catch {
+      toast('Could not build the report', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }, [period, myOrders, orderUnits, orderRevenue, orderCost, orderProfit,
+      myProductIds, prodById, supplierId, currentSupplier, channel, toast]);
+
   /* ── First load failed (network/server) ── */
   if (loaded && error && products.length === 0) {
     return (
@@ -350,10 +453,19 @@ export default function BusinessDashboardView() {
               {PERIOD_META[p].label}
             </button>
           ))}
-          <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: '.76rem', color: 'var(--text-muted)' }}>
-            {PERIOD_META[period].sub}
-          </span>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ marginLeft: 'auto' }}
+            onClick={downloadReport}
+            disabled={exporting}
+            title={`Download a PDF report for ${currentPeriodRange(period).label}`}
+          >
+            {exporting ? 'Preparing…' : '⬇ Download PDF'}
+          </button>
         </div>
+        <p style={{ fontSize: '.76rem', color: 'var(--text-muted)', margin: '8px 2px 0' }}>
+          Chart shows {PERIOD_META[period].sub.toLowerCase()} · PDF covers {currentPeriodRange(period).label}
+        </p>
       </div>
 
       {/* ── KPI Cards — all scoped to the selected period ── */}

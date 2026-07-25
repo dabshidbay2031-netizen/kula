@@ -99,6 +99,79 @@ export function windowStart(buckets: PeriodBucket[]): Date | null {
   return buckets.length ? buckets[0].start : null;
 }
 
+/* ── Reporting ────────────────────────────────────────────────────────────
+   The on-screen chart shows a TREND (last 14 days, last 12 months, …), but a
+   downloaded report is about one period: Daily → that day, Weekly → that week,
+   Monthly → that month, Yearly → that year. These helpers describe that single
+   period and break it into readable sub-rows. */
+
+/** The single period a report covers, with a human label for its cover page. */
+export function currentPeriodRange(period: Period, now: Date = new Date()): { start: Date; end: Date; label: string } {
+  const D = (d: Date) => d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  if (period === 'day') {
+    const start = startOfDay(now);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    return { start, end, label: now.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) };
+  }
+  if (period === 'week') {
+    const start = startOfWeek(now);
+    const end = new Date(start); end.setDate(end.getDate() + 7);
+    const last = new Date(end); last.setDate(last.getDate() - 1);
+    return { start, end, label: `${D(start)} – ${D(last)}` };
+  }
+  if (period === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end   = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { start, end, label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) };
+  }
+  const start = new Date(now.getFullYear(), 0, 1);
+  const end   = new Date(now.getFullYear() + 1, 0, 1);
+  return { start, end, label: String(now.getFullYear()) };
+}
+
+/**
+ * Sub-rows inside the reported period:
+ *   Daily   → 24 hourly rows      Weekly → 7 daily rows
+ *   Monthly → one row per day     Yearly → 12 monthly rows
+ */
+export function buildReportBuckets(period: Period, now: Date = new Date()): PeriodBucket[] {
+  const { start, end } = currentPeriodRange(period, now);
+  const out: PeriodBucket[] = [];
+
+  if (period === 'day') {
+    for (let h = 0; h < 24; h++) {
+      const s = new Date(start); s.setHours(h);
+      const e = new Date(s);     e.setHours(h + 1);
+      out.push({ key: `h-${h}`, label: `${String(h).padStart(2, '0')}:00`, start: s, end: e });
+    }
+    return out;
+  }
+
+  if (period === 'year') {
+    for (let m = 0; m < 12; m++) {
+      const s = new Date(start.getFullYear(), m, 1);
+      const e = new Date(start.getFullYear(), m + 1, 1);
+      out.push({ key: `m-${m}`, label: s.toLocaleDateString('en-US', { month: 'short' }), start: s, end: e });
+    }
+    return out;
+  }
+
+  // week + month → one row per day
+  for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+    const s = new Date(d);
+    const e = new Date(d); e.setDate(e.getDate() + 1);
+    out.push({
+      key:   `d-${s.getTime()}`,
+      label: s.toLocaleDateString('en-US', period === 'week'
+        ? { weekday: 'short', day: 'numeric', month: 'short' }
+        : { day: 'numeric', month: 'short' }),
+      start: s, end: e,
+    });
+  }
+  return out;
+}
+
 /** Compact money for axis ticks and bar captions: 1234 → "$1.2k". */
 export function shortMoney(n: number): string {
   const abs = Math.abs(n);

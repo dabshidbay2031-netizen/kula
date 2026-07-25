@@ -16,6 +16,7 @@ import { useMyProductIds } from '@/lib/useMyProductIds';
 import { isRevenueOrder } from '@/lib/revenue';
 import type { Product, BusinessProduct, Supplier } from '@/lib/types';
 import ProductFormModal, { type ProductFormShape, emptyProductForm } from '@/components/ProductFormModal';
+import { parseCsv, csvRowToProduct, PRODUCT_CSV_TEMPLATE } from '@/lib/csvImport';
 
 /** A store a field agent has registered (GET /api/agent/stores). */
 interface AgentStoreRow {
@@ -756,36 +757,35 @@ export default function ProfilePage() {
   const handleCsvImport = async () => {
     if (!csvFile || !currentSupplier) return;
     setCsvImporting(true); setCsvResult('');
-    const text = await csvFile.text();
-    const lines = text.split('\n').filter(l => l.trim());
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z0-9]/g, '_'));
-    let created = 0; let failed = 0;
-    for (let i = 1; i < lines.length; i++) {
-      const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((h, j) => { row[h] = vals[j] ?? ''; });
-      const name = row.name || row.product_name;
-      const price = parseFloat(row.price || row.selling_price || '0');
-      if (!name || !price) { failed++; continue; }
+
+    const rows = parseCsv(await csvFile.text());
+    if (rows.length === 0) {
+      setCsvResult('❌ No data rows found — the file needs a header row plus at least one product.');
+      setCsvImporting(false);
+      return;
+    }
+
+    let created = 0;
+    const skipped: string[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const payload = csvRowToProduct(rows[i], i);
+      if (!payload) { skipped.push(`row ${i + 2}: missing name or price`); continue; }
       const res = await fetch('/api/products', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          name, price,
-          originalPrice: parseFloat(row.original_price || row.compare_price || String(price)),
-          category:      row.category || 'other',
-          stock:         parseInt(row.stock || row.quantity || '0', 10),
-          sku:           row.sku || `CSV-${Date.now()}-${i}`,
-          description:   row.description || '',
-          brand:         row.brand || '',
-          barcode:       row.barcode || row.ean || '',
-          tags:          row.tags ? row.tags.split('|').map(t => t.trim()) : [],
-          supplierId:    currentSupplier.id,
-        }),
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body:    JSON.stringify({ ...payload, supplierId: currentSupplier.id }),
       });
-      if (res.ok) created++; else failed++;
+      if (res.ok) created++;
+      else {
+        const err = await res.json().catch(() => null);
+        skipped.push(`row ${i + 2}: ${err?.error ?? 'rejected'}`);
+      }
     }
-    setCsvResult(`✅ ${created} products imported${failed > 0 ? `, ❌ ${failed} skipped` : ''}`);
+
+    setCsvResult(
+      `✅ ${created} product${created !== 1 ? 's' : ''} imported` +
+      (skipped.length ? ` · ❌ ${skipped.length} skipped — ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''}` : '')
+    );
     if (created > 0) await reloadProducts();
     setCsvImporting(false);
     setCsvFile(null);
@@ -1216,12 +1216,20 @@ export default function ProfilePage() {
             {csvResult && <span className="csv-result">{csvResult}</span>}
             <a href="#" style={{ fontSize:'.72rem', color:'var(--text-muted)', textDecoration:'underline' }}
               onClick={e => { e.preventDefault();
-                const sample = 'name,price,original_price,category,icon,stock,sku,description,brand,barcode,tags\nSample Product,9.99,12.99,electronics,📦,10,SKU-001,Description here,BrandName,1234567890123,Tag1|Tag2';
-                const blob = new Blob([sample], { type: 'text/csv' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'products_template.csv'; a.click();
+                // BOM so Excel opens the UTF-8 file with accents/emoji intact.
+                const blob = new Blob(['﻿' + PRODUCT_CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'products_template.csv';
+                a.click();
+                URL.revokeObjectURL(a.href);
               }}>
               Download template
             </a>
+            <span style={{ fontSize:'.7rem', color:'var(--text-muted)', flexBasis:'100%' }}>
+              Required: <strong>name</strong> and <strong>price</strong>. Separate tags/extra photos with <code>|</code>,
+              and wrap any text containing a comma in quotes.
+            </span>
           </div>
 
           {/* Scan loading indicator */}
