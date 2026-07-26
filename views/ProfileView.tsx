@@ -18,6 +18,7 @@ import type { Product, BusinessProduct, Supplier } from '@/lib/types';
 import ProductFormModal, { type ProductFormShape, emptyProductForm } from '@/components/ProductFormModal';
 import { tiersToForm, formToTiers } from '@/lib/tierPricing';
 import { parseCsv, csvRowToProduct, PRODUCT_CSV_TEMPLATE } from '@/lib/csvImport';
+import { GENDERS, birthYearOptions, type Gender } from '@/lib/demographics';
 
 /** A store a field agent has registered (GET /api/agent/stores). */
 interface AgentStoreRow {
@@ -183,6 +184,8 @@ export default function ProfilePage() {
   /* ── User profile state ──────────────────────────────────── */
   const [fullName,     setFullName]     = useState('');
   const [phone,        setPhone]        = useState('');
+  const [gender,       setGender]       = useState<Gender>('');
+  const [birthYear,    setBirthYear]    = useState('');
   const [avatarUrl,    setAvatarUrl]    = useState('');
   const [userBio,      setUserBio]      = useState('');
   const [savingUser,   setSavingUser]   = useState(false);
@@ -268,6 +271,8 @@ export default function ProfilePage() {
     if (currentProfile) {
       setFullName(currentProfile.fullName ?? '');
       setPhone(currentProfile.phone ?? '');
+      setGender((currentProfile.gender ?? '') as Gender);
+      setBirthYear(currentProfile.birthYear ? String(currentProfile.birthYear) : '');
       setAvatarUrl(currentProfile.avatarUrl ?? '');
       setUserBio(currentProfile.bio ?? '');
     }
@@ -465,6 +470,7 @@ export default function ProfilePage() {
       await updateProfile({
         fullName: fullName.trim(), phone: phone.trim(),
         avatarUrl: avatarUrl.trim() || null, bio: userBio.trim(),
+        gender, birthYear: birthYear ? Number(birthYear) : null,
       });
       setSavedUser(true);
       setTimeout(() => setSavedUser(false), 3000);
@@ -1072,6 +1078,23 @@ export default function ProfilePage() {
           <div className="form-group">
             <label className="form-label">Phone Number</label>
             <input className="form-input" placeholder="+252 XX XXX XXXX" value={phone} onChange={e => setPhone(e.target.value)} />
+          </div>
+          {/* Optional demographics — editable here so a shopper who skipped
+              them at signup can add them, and anyone can withdraw them. */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            <div className="form-group">
+              <label className="form-label">Gender</label>
+              <select className="form-input" value={gender} onChange={e => setGender(e.target.value as Gender)}>
+                {GENDERS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Year of birth</label>
+              <select className="form-input" value={birthYear} onChange={e => setBirthYear(e.target.value)}>
+                <option value="">Prefer not to say</option>
+                {birthYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
           </div>
           <div className="form-group">
             <label className="form-label">Bio / Description</label>

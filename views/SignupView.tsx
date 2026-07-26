@@ -6,6 +6,7 @@ import { useRouter } from '@/lib/hashRouter';
 import { getSupabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS } from '@/lib/subscription';
+import { GENDERS, birthYearOptions, type Gender } from '@/lib/demographics';
 
 type Method   = 'email' | 'google';
 type AcctType = 'user' | 'business' | 'supplier' | 'agent';
@@ -40,6 +41,10 @@ export default function SignupPage() {
   /* ── Terms agreement (required to create any account) ── */
   const [agreed, setAgreed] = useState(false);
 
+  /* ── Optional shopper demographics (audience segmentation) ── */
+  const [gender,    setGender]    = useState<Gender>('');
+  const [birthYear, setBirthYear] = useState('');
+
   /* Seller plans pay a subscription; customers & agents are free. */
   const planFee = acctType === 'supplier' ? SUBSCRIPTION_PRICES.supplier
                 : acctType === 'business' ? SUBSCRIPTION_PRICES.business
@@ -57,7 +62,12 @@ export default function SignupPage() {
       await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: uid, fullName: userName.trim(), phone: userPhone, avatar: '👤' }),
+        body: JSON.stringify({
+          id: uid, fullName: userName.trim(), phone: userPhone, avatar: '👤',
+          // Optional; the server validates and stores '' / null when declined.
+          gender,
+          birthYear: birthYear ? Number(birthYear) : null,
+        }),
       });
     }
   }
@@ -121,9 +131,17 @@ export default function SignupPage() {
     // fallback), and losing it silently created a CUSTOMER account for someone
     // who asked for a store. localStorage is kept only as a secondary copy.
     const params = new URLSearchParams({ type: acctType, name: name.trim() });
+    // Demographics must survive the trip to Google too, or a shopper who
+    // answered would come back with the answer silently dropped.
+    if (acctType === 'user') {
+      if (gender)    params.set('gender', gender);
+      if (birthYear) params.set('birthYear', birthYear);
+    }
     localStorage.setItem('mogarenta_pending_oauth', JSON.stringify({
       accountType: acctType,
       name:        name.trim(),
+      gender,
+      birthYear,
     }));
 
     const { error: err } = await getSupabase().auth.signInWithOAuth({
@@ -140,6 +158,33 @@ export default function SignupPage() {
   }
 
   const acctIcon = acctType === 'business' ? '🏪' : acctType === 'supplier' ? '🏭' : acctType === 'agent' ? '📋' : '👤';
+
+  /* Optional gender + age, asked once at signup and editable later in
+     Profile. Shared by the Email and Google flows so the answer isn't lost
+     depending on which button you used. */
+  const demographicsFields = (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div className="form-group">
+        <label className="form-label">Gender</label>
+        <select className="form-input" value={gender}
+          onChange={e => setGender(e.target.value as Gender)}>
+          {GENDERS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+        </select>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Year of birth</label>
+        <select className="form-input" value={birthYear}
+          onChange={e => setBirthYear(e.target.value)}>
+          <option value="">Prefer not to say</option>
+          {birthYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+      <div style={{ gridColumn: '1 / -1', fontSize: '.75rem', color: 'var(--text-muted)', marginTop: -6, marginBottom: 10 }}>
+        Optional — helps us show you more relevant products and offers. You can
+        change or remove this any time in your profile.
+      </div>
+    </div>
+  );
 
   /* Fee disclosure + Terms checkbox, shared by the Email and Google flows. */
   const agreeBlock = (
@@ -297,6 +342,11 @@ export default function SignupPage() {
                   />
                 </div>
 
+                {/* Shoppers only: optional demographics for personalising what
+                    we show them. Never required — a forced answer is a lie,
+                    and a lie is worse than a blank. */}
+                {acctType === 'user' && demographicsFields}
+
                 <div className="form-group">
                   <label className="form-label">Password *</label>
                   <div style={{ position: 'relative' }}>
@@ -408,6 +458,8 @@ export default function SignupPage() {
               value={name} onChange={e => setName(e.target.value)} autoFocus
             />
           </div>
+
+          {acctType === 'user' && demographicsFields}
 
           {agreeBlock}
 

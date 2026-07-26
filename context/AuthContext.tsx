@@ -24,7 +24,7 @@ interface AuthContextValue {
   currentProfile:  UserProfile | null;
   signOut:         () => Promise<void>;
   refreshAccount:  () => Promise<void>;
-  updateProfile:   (data: Partial<Pick<UserProfile, 'fullName' | 'phone' | 'avatar' | 'avatarUrl' | 'bio'>>) => Promise<void>;
+  updateProfile:   (data: Partial<Pick<UserProfile, 'fullName' | 'phone' | 'avatar' | 'avatarUrl' | 'bio' | 'gender' | 'birthYear'>>) => Promise<void>;
   /* ── Field-agent "acting as store" ──────────────────────────────
      When a field agent is setting up a store they registered, they select it
      here. While set, `currentSupplier` + `accountType` reflect that STORE, so
@@ -336,7 +336,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   /* ── Update profile ──────────────────────────────────────────── */
-  const updateProfile = async (updates: Partial<Pick<UserProfile, 'fullName' | 'phone' | 'avatar' | 'avatarUrl' | 'bio'>>) => {
+  const updateProfile = async (updates: Partial<Pick<UserProfile, 'fullName' | 'phone' | 'avatar' | 'avatarUrl' | 'bio' | 'gender' | 'birthYear'>>) => {
     if (!user) return;
     if (!currentProfile) {
       const res = await fetch('/api/profile', {

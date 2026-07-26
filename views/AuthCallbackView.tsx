@@ -64,14 +64,21 @@ export default function AuthCallbackPage() {
       const urlName   = qs.get('name');
       let accountType = urlType as 'user' | 'business' | 'supplier' | 'agent' | null;
       let name        = urlName ?? '';
+      let gender      = qs.get('gender') ?? '';
+      let birthYear   = qs.get('birthYear') ?? '';
 
       if (!accountType) {
         try {
           const raw = localStorage.getItem('mogarenta_pending_oauth');
           if (raw) {
-            const p = JSON.parse(raw) as { accountType?: typeof accountType; name?: string };
+            const p = JSON.parse(raw) as {
+              accountType?: typeof accountType; name?: string;
+              gender?: string; birthYear?: string;
+            };
             accountType = p.accountType ?? null;
             name        = p.name ?? '';
+            gender      = p.gender ?? '';
+            birthYear   = p.birthYear ?? '';
           }
         } catch { /* malformed — treat as no pending signup */ }
       }
@@ -88,6 +95,9 @@ export default function AuthCallbackPage() {
               fullName: name || (session.user.user_metadata?.full_name as string | undefined) || '',
               phone:    session.user.phone ?? '',
               avatar:   '👤',
+              // Optional demographics carried through the OAuth round trip.
+              gender,
+              birthYear: birthYear ? Number(birthYear) : null,
             }];
 
         // A failure here used to be swallowed, leaving the user with a Google

@@ -352,12 +352,19 @@ export default function LegalPage() {
               <h2>1. What we collect</h2>
               <p>Account details (name, email, phone), profile and store information, orders and transaction
               history, messages you send, optional delivery location (GPS) you choose to share, and basic device/log data.</p>
+              <p><strong>Optional gender and year of birth.</strong> Shoppers may give these when signing up or in
+              their profile. They are never required, you can change or remove them at any time from
+              Profile → Edit, and leaving them blank does not limit your use of {COMPANY} in any way.</p>
             </section>
 
             <section className="legal-card">
               <h2>2. How we use it</h2>
               <p>To operate the marketplace: authenticate you, process and track orders, enable buyer–seller
               messaging, show store locations/directions you opt into, prevent abuse, and improve the service.</p>
+              <p>If you provided gender or year of birth, we also use them to decide which products, offers and
+              advertising to show you, and to understand our audience in aggregate (for example &ldquo;how many
+              shoppers are 25–34&rdquo;). We do not sell this data, and we do not share it with advertisers in a
+              form that identifies you.</p>
             </section>
 
             <section className="legal-card">

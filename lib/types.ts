@@ -1,3 +1,5 @@
+import type { Gender } from '@/lib/demographics';
+
 export interface Category {
   id:    string;
   name:  string;
@@ -172,6 +174,13 @@ export interface UserProfile {
   bio:       string;
   verified:  boolean;
   createdAt: string;
+  /* Optional shopper demographics (migration_v4_5), for audience
+     segmentation. '' / null means the shopper chose not to say. */
+  gender?:     Gender;
+  birthYear?:  number | null;
+  /** Derived server-side from birthYear on every read — never stored. */
+  age?:        number | null;
+  ageBracket?: string | null;
 }
 
 export type AccountType   = 'user' | 'business' | 'supplier' | 'agent';

@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { errMsg, isUUIDError, isMissingColumnError } from '@/lib/apiHelpers';
+import { normalizeGender, normalizeBirthYear, ageFromBirthYear, ageBracket } from '@/lib/demographics';
 
 function mapProfile(p: Record<string, unknown>) {
+  const birthYear = p.birth_year != null ? Number(p.birth_year) : null;
   return {
     id:        p.id,
     fullName:  p.full_name  ?? '',
@@ -12,6 +14,12 @@ function mapProfile(p: Record<string, unknown>) {
     bio:       p.bio        ?? '',
     verified:  p.verified   ?? false,
     createdAt: p.created_at ?? '',
+    /* Demographics — optional, '' / null means the shopper declined. Age is
+       DERIVED from birth year on every read, so it can never go stale. */
+    gender:    normalizeGender(p.gender),
+    birthYear,
+    age:        ageFromBirthYear(birthYear),
+    ageBracket: ageBracket(birthYear),
   };
 }
 
@@ -32,7 +40,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { id, fullName, phone, avatar, avatarUrl, bio } = body;
+  const { id, fullName, phone, avatar, avatarUrl, bio, gender, birthYear } = body;
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
   const payload: Record<string, unknown> = {
@@ -44,6 +52,13 @@ export async function POST(req: Request) {
     bio:        bio       ?? '',
   };
 
+  // Demographics are optional and validated server-side: an out-of-range birth
+  // year (typo, bot, someone under 13) is stored as "declined" rather than
+  // skewing an age bracket. Only written when the client actually sent them,
+  // so a partial profile update can't silently blank an existing answer.
+  if (gender    !== undefined) payload.gender     = normalizeGender(gender);
+  if (birthYear !== undefined) payload.birth_year = normalizeBirthYear(birthYear);
+
   let { data, error } = await getSupabaseAdmin()
     .from('profiles')
     .upsert(payload)
@@ -51,10 +66,13 @@ export async function POST(req: Request) {
     .single();
 
   // Pre-v3.1 DB without avatar_url/bio columns — retry without them so the
-  // app still works against an un-migrated schema.
+  // app still works against an un-migrated schema. Same for the v4.5
+  // demographics columns.
   if (error && isMissingColumnError(error)) {
     delete payload.avatar_url;
     delete payload.bio;
+    delete payload.gender;
+    delete payload.birth_year;
     ({ data, error } = await getSupabaseAdmin()
       .from('profiles')
       .upsert(payload)
