@@ -6,7 +6,7 @@ import { useRouter } from '@/lib/hashRouter';
 import { getSupabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS } from '@/lib/subscription';
-import { GENDERS, birthYearOptions, type Gender } from '@/lib/demographics';
+import { GENDERS, birthYearOptions, isCompleteDemographics, type Gender } from '@/lib/demographics';
 
 type Method   = 'email' | 'google';
 type AcctType = 'user' | 'business' | 'supplier' | 'agent';
@@ -41,7 +41,7 @@ export default function SignupPage() {
   /* ── Terms agreement (required to create any account) ── */
   const [agreed, setAgreed] = useState(false);
 
-  /* ── Optional shopper demographics (audience segmentation) ── */
+  /* ── Shopper demographics (REQUIRED for shoppers) ── */
   const [gender,    setGender]    = useState<Gender>('');
   const [birthYear, setBirthYear] = useState('');
 
@@ -64,7 +64,7 @@ export default function SignupPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: uid, fullName: userName.trim(), phone: userPhone, avatar: '👤',
-          // Optional; the server validates and stores '' / null when declined.
+          // Required for shoppers; the server re-validates.
           gender,
           birthYear: birthYear ? Number(birthYear) : null,
         }),
@@ -78,6 +78,10 @@ export default function SignupPage() {
   async function handleEmailSignup() {
     if (!name.trim())     { setError(`Enter your ${acctType === 'business' ? 'business' : acctType === 'supplier' ? 'supplier' : acctType === 'agent' ? 'agent' : 'full'} name`); return; }
     if (!email.trim())    { setError('Enter your email address'); return; }
+    // Shoppers must give gender + year of birth — both are required.
+    if (acctType === 'user' && !isCompleteDemographics(gender, birthYear)) {
+      setError('Please select your gender and year of birth'); return;
+    }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
     if (password !== password2) { setError('Passwords do not match'); return; }
     setError(''); setLoading(true);
@@ -123,6 +127,9 @@ export default function SignupPage() {
   ══════════════════════════════════════════════ */
   async function handleGoogleSignup() {
     if (!name.trim()) { setError(`Enter your ${acctType === 'business' ? 'business' : acctType === 'supplier' ? 'supplier' : acctType === 'agent' ? 'agent' : 'full'} name`); return; }
+    if (acctType === 'user' && !isCompleteDemographics(gender, birthYear)) {
+      setError('Please select your gender and year of birth'); return;
+    }
     setError(''); setLoading(true);
 
     // The chosen account type has to survive a full round trip to Google. It
@@ -131,8 +138,8 @@ export default function SignupPage() {
     // fallback), and losing it silently created a CUSTOMER account for someone
     // who asked for a store. localStorage is kept only as a secondary copy.
     const params = new URLSearchParams({ type: acctType, name: name.trim() });
-    // Demographics must survive the trip to Google too, or a shopper who
-    // answered would come back with the answer silently dropped.
+    // Demographics must survive the trip to Google too, or the answer is
+    // silently dropped and the account lands without one.
     if (acctType === 'user') {
       if (gender)    params.set('gender', gender);
       if (birthYear) params.set('birthYear', birthYear);
@@ -159,29 +166,27 @@ export default function SignupPage() {
 
   const acctIcon = acctType === 'business' ? '🏪' : acctType === 'supplier' ? '🏭' : acctType === 'agent' ? '📋' : '👤';
 
-  /* Optional gender + age, asked once at signup and editable later in
-     Profile. Shared by the Email and Google flows so the answer isn't lost
-     depending on which button you used. */
+  /* Gender + year of birth, required for shoppers. Shared by the Email and
+     Google flows so the answer isn't lost depending on which button was used. */
   const demographicsFields = (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       <div className="form-group">
-        <label className="form-label">Gender</label>
+        <label className="form-label">Gender *</label>
         <select className="form-input" value={gender}
           onChange={e => setGender(e.target.value as Gender)}>
           {GENDERS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
         </select>
       </div>
       <div className="form-group">
-        <label className="form-label">Year of birth</label>
+        <label className="form-label">Year of birth *</label>
         <select className="form-input" value={birthYear}
           onChange={e => setBirthYear(e.target.value)}>
-          <option value="">Prefer not to say</option>
+          <option value="">Select…</option>
           {birthYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
       <div style={{ gridColumn: '1 / -1', fontSize: '.75rem', color: 'var(--text-muted)', marginTop: -6, marginBottom: 10 }}>
-        Optional — helps us show you more relevant products and offers. You can
-        change or remove this any time in your profile.
+        Used to show you products and offers relevant to you.
       </div>
     </div>
   );

@@ -1,16 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeGender, normalizeBirthYear, ageFromBirthYear, ageBracket,
-  birthYearOptions, MIN_AGE, MAX_AGE,
+  birthYearOptions, isCompleteDemographics, MIN_AGE, MAX_AGE,
 } from '@/lib/demographics';
 
 const NOW = new Date('2026-07-27T00:00:00Z');
 
 describe('gender', () => {
-  it('accepts the four stored values', () => {
-    for (const g of ['', 'male', 'female', 'other']) {
+  it('accepts only male, female, or blank (legacy)', () => {
+    for (const g of ['', 'male', 'female']) {
       expect(normalizeGender(g)).toBe(g);
     }
+  });
+
+  it('does not accept any other value', () => {
+    expect(normalizeGender('other')).toBe('');
+    expect(normalizeGender('non-binary')).toBe('');
   });
 
   it('treats anything else as "prefer not to say" rather than storing junk', () => {
@@ -101,5 +106,24 @@ describe('birth year dropdown', () => {
     // Every option must survive validation — the form can't offer a value the
     // server would then reject.
     for (const y of opts) expect(normalizeBirthYear(y, NOW)).toBe(y);
+  });
+});
+
+describe('both fields are required at signup', () => {
+  it('accepts a complete answer', () => {
+    expect(isCompleteDemographics('male', 1995)).toBe(true);
+    expect(isCompleteDemographics('female', '2000')).toBe(true);
+  });
+
+  it('rejects a missing or blank gender', () => {
+    expect(isCompleteDemographics('', 1995)).toBe(false);
+    expect(isCompleteDemographics(undefined, 1995)).toBe(false);
+    expect(isCompleteDemographics('other', 1995)).toBe(false);
+  });
+
+  it('rejects a missing or implausible birth year', () => {
+    expect(isCompleteDemographics('male', '')).toBe(false);
+    expect(isCompleteDemographics('male', null)).toBe(false);
+    expect(isCompleteDemographics('male', 3000)).toBe(false);
   });
 });

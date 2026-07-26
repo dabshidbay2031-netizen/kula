@@ -10,9 +10,11 @@
 -- Stores BIRTH YEAR, not age. An age column is stale the day after it's
 -- written; birth year keeps implying the right age forever.
 --
--- Both columns are OPTIONAL ('' / NULL = declined). Forcing the question
--- costs signups and makes people lie, which corrupts the segmentation it was
--- collected for.
+-- Both are REQUIRED at signup for new shoppers (enforced in the app, which is
+-- where the answer is collected). The columns stay nullable/'' at the DB level
+-- ONLY so accounts created before this rule are not broken — they keep working
+-- and are asked to fill it in from their profile. Reports must therefore still
+-- tolerate a blank and label it 'unspecified'.
 --
 -- Idempotent: safe to run more than once.
 -- ============================================================
@@ -21,10 +23,11 @@ ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS gender     TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS birth_year INTEGER;
 
--- '' means "prefer not to say" and is the default, so existing rows are valid.
+-- '' is the pre-rule legacy value and the column default, so the constraint
+-- can be added without rewriting existing rows.
 ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_gender_check;
 ALTER TABLE profiles ADD CONSTRAINT profiles_gender_check
-  CHECK (gender IN ('', 'male', 'female', 'other'));
+  CHECK (gender IN ('', 'male', 'female'));
 
 -- 13 is the floor for ad profiling; anything outside a plausible human range
 -- is a typo or a bot, and would skew every bracket it lands in.
@@ -47,7 +50,9 @@ CREATE INDEX IF NOT EXISTS profiles_birth_year_idx
 -- without exposing individual shoppers.
 CREATE OR REPLACE VIEW audience_segments AS
 SELECT
-  CASE WHEN gender = '' THEN 'unspecified' ELSE gender END AS gender,
+  -- Legacy accounts (pre-requirement) have no answer; keep them visible as
+  -- their own segment instead of quietly folding them into male/female.
+  CASE WHEN gender = '' OR gender IS NULL THEN 'unspecified' ELSE gender END AS gender,
   CASE
     WHEN birth_year IS NULL THEN 'unknown'
     WHEN EXTRACT(YEAR FROM NOW())::INT - birth_year <= 17 THEN '13-17'

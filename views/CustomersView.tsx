@@ -59,6 +59,43 @@ export default function CustomersPage() {
   // Works for the owner AND a staff cashier operating the store.
   const actor = useStoreActor();
   const supplierId = actor.storeId;
+
+  /* ── Credit report download ────────────────────────────────
+     The file is generated server-side (scoped to this store) and saved
+     straight to the device. An empty period is reported rather than silently
+     handing over a blank file the shop might mistake for a good backup. */
+  const [exportPeriod, setExportPeriod] = useState('month');
+  const [exporting,    setExporting]    = useState(false);
+
+  const downloadCredits = useCallback(async (shape: 'summary' | 'detail') => {
+    if (supplierId == null) return;
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/invoices/export?supplierId=${supplierId}&period=${exportPeriod}&shape=${shape}`,
+        { headers: await authHeaders(), cache: 'no-store' });
+      if (!res.ok) { toast('Could not build the credit report', 'error'); return; }
+
+      const blob = await res.blob();
+      // Only the header line + BOM means nothing matched the period.
+      if (blob.size < 120) {
+        toast('No credit records in that period', 'error');
+        return;
+      }
+      const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1]
+        ?? `credits-${exportPeriod}.csv`;
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast(`Saved ${name}`, 'success');
+    } catch {
+      toast('Could not build the credit report', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }, [supplierId, exportPeriod, toast]);
   const products = state.products;
 
   // Only THIS store's products are invoiceable — owned catalog rows plus
@@ -486,7 +523,34 @@ export default function CustomersPage() {
 
       <div className="page-title-bar">
         <span className="page-title">👥 Customers</span>
-        <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Customer</button>
+        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', alignItems: 'center' }}>
+          {/* Credit backup — sellers worry about losing the record of what
+              they're owed, so give them a copy they keep themselves. */}
+          <select
+            className="form-input"
+            style={{ width: 'auto', padding: '6px 10px', fontSize: '.85rem' }}
+            value={exportPeriod}
+            onChange={e => setExportPeriod(e.target.value)}
+            aria-label="Credit report period"
+          >
+            <option value="day">Today</option>
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+            <option value="year">This year</option>
+            <option value="all">Everything</option>
+          </select>
+          <button className="btn btn-secondary btn-sm" onClick={() => downloadCredits('summary')}
+            disabled={exporting || supplierId == null}
+            title="Download who owes you, as a spreadsheet">
+            {exporting ? 'Preparing…' : '⬇ Credit report'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => downloadCredits('detail')}
+            disabled={exporting || supplierId == null}
+            title="Download every credit invoice — the full ledger">
+            Full ledger
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Customer</button>
+        </div>
       </div>
       <p className="page-subtitle">
         {customers.length} customer{customers.length !== 1 ? 's' : ''}

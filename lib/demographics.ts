@@ -7,19 +7,32 @@
  * birthday, and every campaign built on it drifts. Birth year is stable, and
  * the age it implies is always current.
  *
- * Both fields are OPTIONAL. A required gender/age question costs signups and
- * forces people to lie, which poisons the very data the ads depend on — a
- * declined answer is more useful than a fabricated one.
+ * Both fields are REQUIRED at signup — every new shopper must give a gender
+ * (male/female) and a year of birth, so every account is targetable.
+ *
+ * Accounts created BEFORE this rule carry '' / NULL. They are not deleted or
+ * blocked; the profile screen asks them to fill it in. So exports and segment
+ * counts must still tolerate a blank and report it as "unspecified" rather
+ * than assuming a value.
  */
 
-export type Gender = '' | 'male' | 'female' | 'other';
+export type Gender = '' | 'male' | 'female';
 
+/**
+ * Selectable options. '' exists ONLY as the empty state of the dropdown (so it
+ * can't default someone to "male") and as the value legacy rows carry — it is
+ * never an accepted answer: signup and profile-save both reject it.
+ */
 export const GENDERS: { value: Gender; label: string }[] = [
-  { value: '',       label: 'Prefer not to say' },
+  { value: '',       label: 'Select…' },
   { value: 'male',   label: 'Male' },
   { value: 'female', label: 'Female' },
-  { value: 'other',  label: 'Other' },
 ];
+
+/** Both fields are required at signup. */
+export function isCompleteDemographics(gender: unknown, birthYear: unknown): boolean {
+  return (gender === 'male' || gender === 'female') && normalizeBirthYear(birthYear) != null;
+}
 
 /** Oldest and youngest birth years we accept. 13 is the usual floor for ad
  *  profiling; below it, don't collect at all. */
@@ -27,7 +40,7 @@ export const MIN_AGE = 13;
 export const MAX_AGE = 110;
 
 export function isValidGender(v: unknown): v is Gender {
-  return v === '' || v === 'male' || v === 'female' || v === 'other';
+  return v === '' || v === 'male' || v === 'female';
 }
 
 /** Normalise anything the client sends into a storable gender. */
