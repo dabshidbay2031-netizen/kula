@@ -16,6 +16,14 @@
  * money.
  */
 
+export interface ExportPayment {
+  invoiceId: string;
+  amount:    number;
+  method:    string;
+  note?:     string | null;
+  paidAt:    string;
+}
+
 export interface ExportInvoice {
   id:           string;
   customerId:   string;
@@ -25,6 +33,32 @@ export interface ExportInvoice {
   status:       string;
   notes?:       string | null;
   createdAt:    string;
+  /** Individual repayments against this invoice, if loaded. */
+  payments?:    ExportPayment[];
+}
+
+/**
+ * Dates and times are shown in MOGADISHU time, not UTC.
+ *
+ * The DB stores UTC. A shop reconciling "he paid at 9pm" against a row saying
+ * 18:00 would think the record is wrong. Somalia is UTC+3 year-round with no
+ * daylight saving, so this is stable.
+ */
+const TZ = 'Africa/Mogadishu';
+
+export function localDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  // en-CA gives YYYY-MM-DD, which sorts correctly in a spreadsheet.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+export function localTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
 }
 
 export interface ExportCustomer {
