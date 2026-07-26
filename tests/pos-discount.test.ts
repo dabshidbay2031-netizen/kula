@@ -19,7 +19,7 @@ const PRODUCT = { id: 1, price: 100, stock: 50, sold: 0 };
 function builder(table: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const b: any = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'update'] as const) b[m] = () => b;
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'update', 'range', 'gte'] as const) b[m] = () => b;
   b.insert = (payload: Record<string, unknown>) => {
     if (table === 'orders') orderInsert = payload;
     return b;

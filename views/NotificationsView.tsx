@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import { useApp } from '@/context/AppContext';
 import { useAuth } from '@/context/AuthContext';
 import { isPushSupported, subscribeToPush, pushReasonMessage } from '@/lib/push';
+import { authHeaders } from '@/lib/clientAuth';
 
 export default function NotificationsPage() {
   const { state, markAllRead, clearNotifications, toast } = useApp();
@@ -23,15 +24,42 @@ export default function NotificationsPage() {
     setPushState(p === 'granted' ? 'granted' : p === 'denied' ? 'denied' : 'prompt');
   }, []);
 
+  /** Set when the server can't accept subscriptions (e.g. migration not run) —
+   *  shown verbatim so a setup problem is diagnosable instead of silent. */
+  const [pushError, setPushError] = useState<string | null>(null);
+  const [testing, setTesting]     = useState(false);
+
   const enablePush = async () => {
     setEnabling(true);
-    const { ok, reason } = await subscribeToPush();
+    setPushError(null);
+    const { ok, reason, detail } = await subscribeToPush();
     setEnabling(false);
     if (ok) { setPushState('granted'); toast('Push notifications enabled ✓', 'success'); }
     else {
       setPushState(Notification.permission === 'denied' ? 'denied' : 'prompt');
       toast(pushReasonMessage(reason), 'error');
+      if (reason === 'needs-setup' || reason === 'server' || reason === 'no-vapid') {
+        setPushError(detail ?? pushReasonMessage(reason));
+      }
     }
+  };
+
+  /** Prove the whole chain works on THIS device. */
+  const sendTest = async () => {
+    setTesting(true);
+    setPushError(null);
+    try {
+      const res  = await fetch('/api/push/test', { method: 'POST', headers: await authHeaders() });
+      const data = await res.json().catch(() => null);
+      if (res.ok) toast(`Test sent to ${data?.devices ?? 1} device(s) — check your notifications`, 'success');
+      else {
+        toast(data?.error ?? 'Test failed', 'error');
+        setPushError(data?.error ?? null);
+      }
+    } catch {
+      toast('Network error', 'error');
+    }
+    setTesting(false);
   };
 
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -86,7 +114,24 @@ export default function NotificationsPage() {
       )}
       {user && pushState === 'denied' && (
         <div style={{ margin:'0 16px 12px', fontSize:'.78rem', color:'var(--text-muted)', padding:'0 2px' }}>
-          🔕 Push notifications are blocked — allow notifications for this site in your browser settings to receive order alerts.
+          🔕 Push notifications are blocked. Tap the padlock (or ⓘ) next to the address bar → <strong>Notifications</strong> → <strong>Allow</strong>, then reload this page.
+        </div>
+      )}
+
+      {/* Granted: let the user prove delivery actually reaches this device. */}
+      {user && pushState === 'granted' && (
+        <div style={{ margin:'0 16px 12px', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          <span style={{ fontSize:'.78rem', color:'var(--text-muted)' }}>🔔 Notifications are on for this device.</span>
+          <button className="btn btn-ghost btn-sm" onClick={sendTest} disabled={testing}>
+            {testing ? 'Sending…' : 'Send test notification'}
+          </button>
+        </div>
+      )}
+
+      {/* A setup/server fault, shown verbatim — otherwise this fails silently. */}
+      {pushError && (
+        <div style={{ margin:'0 16px 12px', padding:'10px 12px', borderRadius:10, background:'#fee2e2', color:'#991b1b', fontSize:'.78rem' }}>
+          ⚠️ {pushError}
         </div>
       )}
 

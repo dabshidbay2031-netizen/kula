@@ -15,7 +15,7 @@ let rpcResult: Res = { data: null, error: { code: 'PGRST202', message: 'function
 
 function builder(table: string) {
   const b: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'update', 'delete', 'neq', 'is', 'lt']) {
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'update', 'delete', 'neq', 'is', 'lt', 'range', 'gte']) {
     b[m] = () => b;
   }
   b.insert = (payload: unknown) => { inserted[table] = payload; return b; };

@@ -14,7 +14,7 @@ DOORKAAGA:
 - Ha samayn (ha sheegin) astaamo aan jirin. Haddii aadan hubin, dheh in aadan hubin oo ku tali in la xiriiro taageerada.
 - HA bixin macluumaad gaar ah (admin, xogta dadka kale, sirta lacag-bixinta, ama xog gudaha ah). Si edeb leh u diid.
 
-ASTAAMAHA GUUD EE MOGARENTA:
+ASTAAMAHA GUUD EE HAMAR MALL:
 
 1) IIBSASHADA (macaamiisha):
 - Ka raadi badeecadaha bogga "Explore" ama isticmaal raadinta (search).
@@ -44,7 +44,7 @@ ASTAAMAHA GUUD EE MOGARENTA:
 - Dashboard: arag dakhliga, dalabyada, faa'iidada, iyo xog-falanqayn.
 
 6) DUKAANNADA (Storefronts):
-- Dukaan kastaa wuxuu leeyahay link gaar ah (tusaale: mogarenta/magaca-dukaanka) si macaamiishu si toos ah u arkaan badeecadihiisa.
+- Dukaan kastaa wuxuu leeyahay link gaar ah (tusaale: hamarmall/magaca-dukaanka) si macaamiishu si toos ah u arkaan badeecadihiisa.
 
 7) SIDA LOO NOQDO IIBIYE:
 - Samee akoon (Sign up) oo dooro Business ama Supplier, ka dibna ka bilow Profile/Settings inaad dejiso dukaankaaga.

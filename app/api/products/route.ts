@@ -43,6 +43,8 @@ function mapProduct(p: Record<string, unknown>) {
     taxMode:       (p.tax_mode as 'none' | 'included' | 'excluded') ?? 'none',
     // Provenance for a copied listing (migration_v4_0) — absent column → null.
     copiedFromProductId: (p.copied_from_product_id as number | undefined) ?? null,
+    // Store pays the 3% platform fee for this product (migration_v4_2).
+    feeAbsorbedByStore: Boolean(p.fee_absorbed_by_store ?? false),
   };
 }
 
@@ -162,7 +164,7 @@ export async function POST(req: Request) {
   const {
     name, price, originalPrice, cost, category, subCategory, stock,
     sku, description, imageUrl, imageUrls, supplierId, barcode, tags, brand,
-    priceTiers, isB2b, moq, taxMode,
+    priceTiers, isB2b, moq, taxMode, feeAbsorbedByStore,
   } = body;
 
   if (!name || !price || !category) {
@@ -200,6 +202,7 @@ export async function POST(req: Request) {
     is_b2b:         Boolean(isB2b ?? false),
     moq:            parseInt(moq ?? '1', 10),
     tax_mode:       (['none','included','excluded'] as const).includes(taxMode) ? taxMode : 'none',
+    fee_absorbed_by_store: Boolean(feeAbsorbedByStore ?? false),
   };
 
   const basicProduct: Record<string, unknown> = {
@@ -225,9 +228,15 @@ export async function POST(req: Request) {
   // that column before collapsing to basicProduct — the old fallback silently
   // threw away photos/barcode/tags/brand whenever any one column was missing.
   const { cost: _cost, ...fullNoCost } = fullProduct;
+  // fee_absorbed_by_store ships in migration_v4_2 — drop it before falling all
+  // the way back to basicProduct, which would also discard photos/tags/barcode.
+  const { fee_absorbed_by_store: _fee, ...fullNoFee }     = fullProduct;
+  const { fee_absorbed_by_store: _fee2, ...noCostNoFee }  = fullNoCost;
   const attempts = [
     { ...fullProduct,  id: nextId },
+    { ...fullNoFee,    id: nextId },
     { ...fullNoCost,   id: nextId },
+    { ...noCostNoFee,  id: nextId },
     { ...basicProduct, id: nextId },
     { ...basicProduct, id: nextId, category: LEGACY_CATS[category] ?? 'electronics' },
   ];

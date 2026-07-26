@@ -91,11 +91,42 @@ async function computeTotals(
 
   // The wallet epoch is what makes the balance start at zero: orders taken
   // before the store's wallet was switched on are simply not counted.
-  let q = sb
-    .from('orders').select('items, payment_method, status, supplier_id, subtotal, created_at')
-    .order('created_at', { ascending: false }).limit(1000);
-  if (since) q = q.gte('created_at', since);
-  const { data: orders } = await q;
+  // NO .limit() here. Earnings were capped at the most recent 1000 orders
+  // while payouts were summed in full, so past that point the balance silently
+  // dropped older income but kept subtracting older withdrawals — a number
+  // that drifts wrong and always in the seller's disfavour. Page through
+  // everything instead; `since` (the wallet epoch) already bounds the range.
+  const PAGE = 1000;
+  async function readAllOrders(withFeeCol: boolean): Promise<Record<string, unknown>[] | null> {
+    const cols = withFeeCol
+      ? 'items, payment_method, status, supplier_id, subtotal, created_at, fee_paid_by_store'
+      : 'items, payment_method, status, supplier_id, subtotal, created_at';
+    const out: Record<string, unknown>[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      let page = sb.from('orders').select(cols)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE - 1);
+      if (since) page = page.gte('created_at', since);
+      const { data, error } = await page;
+      if (error) return null;                       // caller retries without the fee column
+      const rows = (data ?? []) as unknown as Record<string, unknown>[];
+      out.push(...rows);
+      if (rows.length < PAGE) return out;           // last page
+    }
+  }
+
+  // fee_paid_by_store ships in migration_v4_2 — on an older DB the select above
+  // errors, so retry without it rather than reporting a zero balance.
+  let orders: Record<string, unknown>[] | null = await readAllOrders(true);
+  if (!orders) {
+    orders = await readAllOrders(false);
+  }
+  if (!orders) {
+    const { data } = await sb.from('orders')
+      .select('items, payment_method, status, supplier_id, subtotal, created_at')
+      .order('created_at', { ascending: false }).limit(PAGE);
+    orders = data as Record<string, unknown>[] | null;
+  }
 
   let online = 0;
   let cash   = 0;
@@ -125,6 +156,10 @@ async function computeTotals(
         if (price != null) amount += price * (Number(line.qty) || 0);
       }
     }
+
+    // A fee the store agreed to absorb is the platform's money, not theirs —
+    // deduct it so the withdrawable balance can't include it.
+    amount -= Number((o as { fee_paid_by_store?: number }).fee_paid_by_store) || 0;
 
     if (isOnline) online += amount;
     else          cash   += amount;

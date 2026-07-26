@@ -37,6 +37,13 @@ method (Sifalo Pay — EVC Plus / ZAAD / SAHAL, eDahab, or Premier Wallet). Fees
 USD and exclude any charges levied by your wallet provider. We may change fees on notice;
 changes apply to your next billing cycle.
 
+**Each payment covers a 30-day billing period.** Subscriptions are *not* auto-renewing: we
+never charge your wallet without you starting the payment. Your Billing page shows the date
+your current month ends, and warns you in the final 5 days. If the period ends without a
+renewal, the store dashboard is locked until you pay again (Section 5) — your data is kept.
+You may renew before the period ends; paying early **adds** 30 days to the time you already
+have rather than replacing it.
+
 ## 4. 7-day money-back guarantee
 
 Every seller subscription includes a **7-day money-back guarantee**.
@@ -91,7 +98,7 @@ take effect constitutes acceptance.
 
 ## 12. Contact
 
-Questions about these Terms or billing: **support@mogarenta.com**
+Questions about these Terms or billing: **support@hamarmall.com**
 
 ---
 
@@ -104,12 +111,20 @@ Questions about these Terms or billing: **support@mogarenta.com**
 | Dashboard lock | `components/TrialGate.tsx` |
 | Billing screen | `views/BillingView.tsx` (`#/billing`) |
 | DB columns + ledger | `supabase/migration_subscriptions.sql` |
+| Monthly period column | `supabase/migration_v4_3.sql` (`subscription_period_end`) |
 | In-app terms | `views/LegalView.tsx` (`#/terms`) |
 
 - The fee is decided **server-side from `account_type`** — a client can never choose its own price.
 - Refunds are gated server-side to the 7-day window; a late refund returns HTTP 409.
+- The billing period is `subscription_period_end`; `deriveSubscription` marks a store `expired`
+  (and `locked`) once it passes. Renewal extends from the later of *now* and the current period
+  end, so early payment never burns paid days.
 - Existing stores were **grandfathered** by the migration (backfilled `subscription_paid_at = created_at`)
-  so the paywall did not lock out accounts that joined before billing existed.
+  so the paywall did not lock out accounts that joined before billing existed. `migration_v4_3.sql`
+  grandfathers them again for the monthly cycle: every currently-paid store gets a period ending
+  30 days after the migration runs, never a period derived from that backfilled `created_at`.
+- Until `migration_v4_3.sql` runs, monthly expiry is **not enforced** (`monthlyBillingEnabled`
+  is false when the column is absent) — deploying the code before the migration cannot lock anyone out.
 - Payment currently runs through **Sifalo mock mode** until real merchant credentials are set
   (`SIFALO_API_USERNAME` / `SIFALO_API_PASSWORD`). No real money moves until then; the refund
   step records the reversal in `subscription_events` but does not call a gateway refund API.

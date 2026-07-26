@@ -12,14 +12,14 @@ import { useRealtimePing } from '@/lib/useRealtimePing';
 import OnlinePaymentsWallet from '@/components/OnlinePaymentsWallet';
 import { CATEGORIES } from '@/lib/data';
 import { isRevenueOrder, orderChannel } from '@/lib/revenue';
-import { deriveSubscription, SUBSCRIPTION_TRIAL_DAYS } from '@/lib/subscription';
+import { deriveSubscription, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_NOTICE_DAYS } from '@/lib/subscription';
 import TrendChart from '@/components/TrendChart';
 import {
   buildBuckets, bucketIndexFor, PERIOD_META, shortMoney,
   buildReportBuckets, currentPeriodRange, type Period,
 } from '@/lib/dashboardPeriod';
 import { buildDashboardReportHtml, openReportForPrint, reportFileName } from '@/lib/dashboardReport';
-import type { Order, Product } from '@/lib/types';
+import type { CartItem, Order, Product } from '@/lib/types';
 
 /**
  * Per-business dashboard — scoped to the SIGNED-IN business/supplier only.
@@ -117,19 +117,43 @@ export default function BusinessDashboardView() {
   const prodById     = useMemo(() => new Map(products.map(p => [p.id, p])), [products]);
   const myProductIds = useMemo(() => new Set(products.map(p => p.id)), [products]);
 
+  /**
+   * The price this line ACTUALLY sold for.
+   *
+   * The order stores a frozen unit price per line (see the orders API — it
+   * snapshots the tier-adjusted price at sale time). Reading today's catalog
+   * price instead meant raising a price retroactively inflated last week's
+   * revenue — invented growth. Catalog price is only a last resort for very
+   * old rows that predate the snapshot.
+   */
+  const soldUnitPrice = useMemo(() => (it: CartItem) => {
+    const snap = it.unitPrice ?? it.price;
+    return Number.isFinite(Number(snap)) ? Number(snap) : (prodById.get(it.id)?.price ?? 0);
+  }, [prodById]);
+
+  /** Gross line revenue for this store, valued as sold. */
   const orderRevenue = useMemo(() => (o: Order) =>
     (o.items ?? []).reduce((s, it) => myProductIds.has(it.id)
-      ? s + (prodById.get(it.id)?.price ?? 0) * (Number(it.qty) || 0) : s, 0),
-  [myProductIds, prodById]);
+      ? s + soldUnitPrice(it) * (Number(it.qty) || 0) : s, 0),
+  [myProductIds, soldUnitPrice]);
+
+  /**
+   * The slice of the platform fee this store chose to absorb ("fee on us").
+   * The wallet already deducts it; the dashboard did not, so a seller saw a
+   * bigger number on screen than the money they could actually withdraw.
+   */
+  const orderStoreFee = useMemo(() => (o: Order) =>
+    Number.isFinite(Number(o.feePaidByStore)) ? Number(o.feePaidByStore) : 0,
+  []);
 
   const orderProfit = useMemo(() => (o: Order) =>
     (o.items ?? []).reduce((s, it) => {
       if (!myProductIds.has(it.id)) return s;
       const p = prodById.get(it.id);
       if (!p) return s;
-      return s + ((p.price ?? 0) - (p.cost ?? 0)) * (Number(it.qty) || 0);
-    }, 0),
-  [myProductIds, prodById]);
+      return s + (soldUnitPrice(it) - (p.cost ?? 0)) * (Number(it.qty) || 0);
+    }, 0) - orderStoreFee(o),
+  [myProductIds, prodById, soldUnitPrice, orderStoreFee]);
 
   const orderUnits = useMemo(() => (o: Order) =>
     (o.items ?? []).reduce((s, it) => myProductIds.has(it.id)
@@ -433,6 +457,14 @@ export default function BusinessDashboardView() {
         <div className="card" style={{ margin: '0 16px 14px', padding: '11px 14px', borderRadius: 10, fontSize: '.85rem' }}>
           ✅ Subscription active. You have <strong>{sub.daysLeftToRefund} day{sub.daysLeftToRefund === 1 ? '' : 's'}</strong> left
           in your {SUBSCRIPTION_TRIAL_DAYS}-day money-back guarantee — <Link href="/billing">manage billing</Link>.
+        </div>
+      )}
+
+      {/* Renewal warning — the dashboard locks when the paid month runs out. */}
+      {!sub.locked && sub.daysLeftInPeriod > 0 && sub.daysLeftInPeriod <= SUBSCRIPTION_NOTICE_DAYS && (
+        <div className="card" style={{ margin: '0 16px 14px', padding: '11px 14px', borderRadius: 10, fontSize: '.85rem' }}>
+          ⏳ Your monthly subscription ends in <strong>{sub.daysLeftInPeriod} day{sub.daysLeftInPeriod === 1 ? '' : 's'}</strong>.
+          {' '}<Link href="/billing">Renew now</Link> to keep your dashboard open.
         </div>
       )}
 

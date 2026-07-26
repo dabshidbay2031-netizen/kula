@@ -24,7 +24,7 @@ function ensureVapid(): boolean {
   if (vapidReady !== null) return vapidReady;
   const pub  = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const priv = process.env.VAPID_PRIVATE_KEY;
-  const subj = process.env.VAPID_SUBJECT ?? 'mailto:admin@mogarenta.com';
+  const subj = process.env.VAPID_SUBJECT ?? 'mailto:admin@hamarmall.com';
   if (!pub || !priv) { vapidReady = false; return false; }
   try {
     webpush.setVapidDetails(subj, pub, priv);

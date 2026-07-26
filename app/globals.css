@@ -28,6 +28,11 @@
   --nav-h:         68px;
   --header-h:      60px;
   --sidebar-w:     220px;
+  /* Bottom clearance for the fixed mobile bottom-nav + iOS home indicator.
+     Shared by #app (padding-bottom) and .site-footer (negative margin) so the
+     two can never drift apart — the footer always absorbs exactly this much,
+     leaving no empty gap below it. Reset to 0 on desktop (no bottom nav). */
+  --app-pad-b:     calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
   /* Motion system — durations + easings */
   --dur-fast:      .15s;
   --dur:           .25s;
@@ -86,7 +91,7 @@ ul { list-style: none; }
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--app-pad-b);
 }
 
 /* ── Header ────────────────────────────────────── */
@@ -1414,6 +1419,7 @@ ul { list-style: none; }
     max-width: none;
     box-shadow: none;
   }
+  :root { --app-pad-b: 0; }
 
   /* ── Hide bottom nav on desktop ── */
   .bottom-nav { display: none; }
@@ -2225,6 +2231,10 @@ ul { list-style: none; }
   .nav-item span { font-size: .68rem; }
   
   #app { padding-bottom: var(--nav-h); }
+  :root { --app-pad-b: var(--nav-h); }
+  /* The bottom-nav hides at 960px (above), so from 960–1023px this tablet
+     query would wrongly re-add nav clearance. Reset it to 0 to match desktop. */
+  @media (min-width: 960px) { :root { --app-pad-b: 0; } }
   
   .product-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -2402,6 +2412,13 @@ ul { list-style: none; }
   .nav-item span { font-size: .58rem; }
   /* Extra bottom padding so content clears the shorter landscape nav */
   #app { padding-bottom: 52px; }
+  :root { --app-pad-b: 52px; }
+  /* Only meaningful where the bottom nav is actually shown (<960px); on a
+     wide-but-short screen the nav is hidden, so keep clearance at 0. */
+  @media (min-width: 960px) {
+    #app { padding-bottom: 0; }
+    :root { --app-pad-b: 0; }
+  }
   .detail-img-wrap { aspect-ratio: 1.5; }
   .banner { padding: 12px 16px; }
   .banner h2 { font-size: .95rem; margin-bottom: 2px; }
@@ -3814,7 +3831,10 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 /* 10. Bottom nav safe-area inset for notched phones */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .bottom-nav { min-height: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
-  #app { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
+  /* --app-pad-b already includes safe-area by default (see :root). Only restate
+     it where a breakpoint overrode the variable WITHOUT the inset. The mobile
+     base case is already correct; this keeps #app in sync with the footer. */
+  #app { padding-bottom: var(--app-pad-b); }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -3859,17 +3879,102 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   border-color: var(--danger) !important;
 }
 
-/* Legal pages (privacy / terms) */
-.legal-wrap { max-width: 760px; margin: 0 auto; padding: 16px 18px 100px; }
-.legal-doc h1 { font-size: 1.5rem; font-weight: 800; color: var(--text); margin: 12px 0 4px; }
-.legal-doc h2 { font-size: 1rem; font-weight: 700; color: var(--text); margin: 20px 0 6px; }
-.legal-doc p  { font-size: .92rem; line-height: 1.65; color: var(--text-muted); margin-bottom: 8px; }
-.legal-doc a  { color: var(--primary); }
-.legal-updated { font-size: .8rem; color: var(--text-muted); margin-bottom: 8px; }
-.legal-footer { display: flex; gap: 10px; justify-content: center; align-items: center;
-  padding: 0 16px 100px; font-size: .82rem; color: var(--text-muted); }
-.legal-footer a { color: var(--text-muted); }
-.legal-footer a:hover { color: var(--primary); }
+/* Legal / information pages (about, contact, refunds, privacy, terms) */
+.legal-wrap { max-width: 820px; margin: 0 auto; padding: 18px 18px 100px; }
+.legal-doc { display: flex; flex-direction: column; gap: 16px; }
+
+/* Hero banner — gradient, brand mark, title */
+.legal-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 30px 28px 28px;
+  border-radius: var(--radius-lg);
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-primary);
+}
+.legal-hero-shine {
+  position: absolute; inset: 0;
+  background: var(--gradient-shine);
+  opacity: .7; pointer-events: none;
+}
+.legal-hero-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; margin-bottom: 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.18);
+  color: #fff;
+  backdrop-filter: blur(2px);
+}
+.legal-hero-eyebrow {
+  font-size: .72rem; font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; opacity: .85; margin-bottom: 4px;
+}
+.legal-hero h1 {
+  font-size: 1.9rem; font-weight: 800; color: #fff;
+  margin: 0 0 6px; line-height: 1.15;
+}
+.legal-hero-sub {
+  font-size: .95rem; line-height: 1.5; opacity: .92;
+  max-width: 56ch; margin: 0;
+}
+
+/* Content cards */
+.legal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  box-shadow: var(--shadow);
+  transition: box-shadow var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+}
+.legal-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+.legal-card h2 {
+  font-size: 1.02rem; font-weight: 700; color: var(--text);
+  margin: 0 0 8px;
+}
+.legal-card p {
+  font-size: .92rem; line-height: 1.7; color: var(--text-muted);
+  margin: 0 0 8px;
+}
+.legal-card p:last-child { margin-bottom: 0; }
+.legal-card a { color: var(--primary); font-weight: 600; }
+.legal-card a:hover { text-decoration: underline; }
+/* Re-enable bullets for lists (reset to none globally) */
+.legal-card ul { list-style: disc; margin: 4px 0 8px 4px; }
+.legal-card li { font-size: .92rem; line-height: 1.7; color: var(--text-muted); margin-bottom: 4px; margin-left: 18px; }
+
+/* Last-updated line, shown under the hero */
+.legal-updated { font-size: .8rem; color: var(--text-muted); margin: -4px 0 0; }
+
+/* Bottom cross-links */
+.legal-footnav {
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: .82rem;
+  color: var(--text-muted);
+}
+.legal-footnav a {
+  color: var(--text-muted);
+  transition: color var(--dur-fast);
+}
+.legal-footnav a:hover { color: var(--primary); text-decoration: underline; }
+.legal-footnav-dot { opacity: .6; }
+.legal-footnav-current { color: var(--text); font-weight: 700; }
+
+/* Dark theme tweaks — surface cards stay readable */
+[data-theme="dark"] .legal-hero-sub { opacity: .95; }
+[data-theme="dark"] .legal-card { background: var(--surface); }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .legal-hero { padding: 24px 20px 22px; }
+  .legal-hero h1 { font-size: 1.55rem; }
+  .legal-hero-sub { font-size: .88rem; }
+  .legal-card { padding: 16px 18px; }
+}
 
 .tracking-stage-actions { display: flex; flex-direction: column; gap: 10px; }
 .tracking-stage-complete {
@@ -4527,3 +4632,77 @@ img, svg, video, canvas { max-width: 100%; }
 /* ── Dark theme: safe area bg matches surface ───────────────── */
 [data-theme="dark"] .bottom-nav { background: var(--surface); }
 [data-theme="dark"] body { background: var(--bg); }
+
+/* ══════════════════════════════════════════════════════════════
+   Site footer — policy/company links. Hidden on full-screen
+   working surfaces (POS, chat, checkout, admin) by the component.
+
+   #app is a flex column with min-height:100dvh and a padding-bottom that
+   clears the fixed mobile bottom nav. The footer is the last child of #app,
+   so margin-top:auto pins it to the bottom on short pages. To avoid an empty
+   gap *below* the footer, the footer pulls itself down into #app's
+   padding-bottom (negative bottom margin equal to it), then re-adds the nav
+   clearance as its own padding-bottom — so the space is filled by footer
+   background, not left empty.
+   ══════════════════════════════════════════════════════════════ */
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  /* Eat #app's bottom-nav clearance (via the shared --app-pad-b) so nothing is
+     left empty below us, then reclaim that same space inside the footer — so
+     the fixed bottom-nav sits over the footer's own padding, never leaving a
+     gap. Both reference --app-pad-b so they can't drift apart. */
+  margin-bottom: calc(-1 * var(--app-pad-b));
+  padding-bottom: var(--app-pad-b);
+}
+.site-footer-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px 24px;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 32px;
+}
+.site-footer-brand { max-width: 320px; }
+.site-footer-logo {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 800; font-size: 1.05rem; color: var(--primary);
+}
+.site-footer-tagline {
+  margin-top: 10px;
+  font-size: .82rem; line-height: 1.6; color: var(--text-muted);
+}
+.site-footer-col { display: flex; flex-direction: column; gap: 8px; }
+.site-footer-col h3 {
+  font-size: .72rem; font-weight: 800; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px;
+}
+.site-footer-col a {
+  font-size: .85rem; color: var(--text); text-decoration: none;
+  transition: color .15s;
+}
+.site-footer-col a:hover { color: var(--primary); text-decoration: underline; }
+.site-footer-bottom {
+  max-width: 1100px; margin: 0 auto;
+  padding: 14px 20px; border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap;
+  font-size: .76rem; color: var(--text-muted);
+}
+.site-footer-pay { opacity: .85; }
+
+@media (max-width: 860px) {
+  .site-footer-inner { grid-template-columns: 1fr 1fr; gap: 24px; }
+  .site-footer-brand { grid-column: 1 / -1; max-width: none; }
+}
+@media (max-width: 480px) {
+  .site-footer-inner { grid-template-columns: 1fr; }
+  .site-footer-bottom { flex-direction: column; align-items: flex-start; }
+}
+
+/* Desktop: the fixed bottom nav is hidden, so --app-pad-b is 0 and there's no
+   nav clearance to absorb. Keep a small bottom inset on the footer itself. */
+@media (min-width: 961px) {
+  .site-footer { padding-bottom: 24px; }
+}

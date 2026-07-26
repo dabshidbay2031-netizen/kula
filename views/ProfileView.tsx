@@ -16,6 +16,7 @@ import { useMyProductIds } from '@/lib/useMyProductIds';
 import { isRevenueOrder } from '@/lib/revenue';
 import type { Product, BusinessProduct, Supplier } from '@/lib/types';
 import ProductFormModal, { type ProductFormShape, emptyProductForm } from '@/components/ProductFormModal';
+import { tiersToForm, formToTiers } from '@/lib/tierPricing';
 import { parseCsv, csvRowToProduct, PRODUCT_CSV_TEMPLATE } from '@/lib/csvImport';
 
 /** A store a field agent has registered (GET /api/agent/stores). */
@@ -687,7 +688,7 @@ export default function ProfilePage() {
   function openAddProduct() { setEditingProd(null); setForm(emptyForm); setShowForm(true); }
   function openEditProduct(p: Product) {
     setEditingProd(p);
-    const pc = p as Product & { cost?: number; taxMode?: 'none' | 'included' | 'excluded' };
+    const pc = p as Product & { cost?: number; taxMode?: 'none' | 'included' | 'excluded'; feeAbsorbedByStore?: boolean };
     setForm({
       name:         p.name,
       price:        String(p.price),
@@ -704,6 +705,8 @@ export default function ProfilePage() {
       imageUrls:    p.imageUrls  ?? [],
       supplierId:   p.supplierId ? String(p.supplierId) : '',
       taxMode:      pc.taxMode ?? 'none',
+      feeAbsorbedByStore: Boolean(pc.feeAbsorbedByStore),
+      priceTiers:   tiersToForm(p.priceTiers),
     });
     setShowForm(true);
   }
@@ -827,6 +830,8 @@ export default function ProfilePage() {
       brand:         form.brand.trim()   || null,
       tags:          form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
       taxMode:       form.taxMode,
+      feeAbsorbedByStore: form.feeAbsorbedByStore,
+      priceTiers:    formToTiers(form.priceTiers),
       imageUrls:     form.imageUrls,
       // Keep legacy imageUrl in sync with first photo
       imageUrl:      form.imageUrls[0] ?? null,
@@ -1500,7 +1505,7 @@ export default function ProfilePage() {
                 </label>
                 <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                   <span style={{ color:'var(--text-muted)', fontSize:'.85rem', flexShrink:0 }}>
-                    {typeof window !== 'undefined' ? window.location.host : 'mogarenta.com'}/
+                    {typeof window !== 'undefined' ? window.location.host : 'hamarmall.com'}/
                   </span>
                   <input
                     className="form-input"

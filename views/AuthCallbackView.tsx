@@ -53,41 +53,74 @@ export default function AuthCallbackPage() {
 
       const uid = session.user.id;
 
-      /* ── Handle pending OAuth signup ─────────────── */
-      const pendingRaw = localStorage.getItem('mogarenta_pending_oauth');
-      if (pendingRaw) {
-        try {
-          setStatus('Setting up your account…');
-          const { accountType, name } = JSON.parse(pendingRaw) as {
-            accountType: 'user' | 'business' | 'supplier';
-            name:        string;
-          };
-          localStorage.removeItem('mogarenta_pending_oauth');
+      /* ── Handle pending OAuth signup ─────────────────────────────
+         The account type comes from the RETURN URL first: it is the only
+         copy guaranteed to survive the trip to Google (localStorage is lost
+         whenever the callback lands on a different origin than the signup
+         page, which silently turned "Business" into a customer account).
+         localStorage stays as a fallback for links made before this change. */
+      const qs        = new URLSearchParams(window.location.search);
+      const urlType   = qs.get('type');
+      const urlName   = qs.get('name');
+      let accountType = urlType as 'user' | 'business' | 'supplier' | 'agent' | null;
+      let name        = urlName ?? '';
 
-          if (accountType === 'business' || accountType === 'supplier') {
-            await fetch('/api/suppliers', {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({ name: name || 'My Business', authUserId: uid, accountType }),
-            });
-          } else {
-            await fetch('/api/profile', {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({
-                id:       uid,
-                fullName: name || (session.user.user_metadata?.full_name as string | undefined) || '',
-                phone:    session.user.phone ?? '',
-                avatar:   '👤',
-              }),
-            });
+      if (!accountType) {
+        try {
+          const raw = localStorage.getItem('mogarenta_pending_oauth');
+          if (raw) {
+            const p = JSON.parse(raw) as { accountType?: typeof accountType; name?: string };
+            accountType = p.accountType ?? null;
+            name        = p.name ?? '';
           }
-        } catch { /* non-fatal */ }
+        } catch { /* malformed — treat as no pending signup */ }
+      }
+
+      if (accountType) {
+        localStorage.removeItem('mogarenta_pending_oauth');
+        setStatus('Setting up your account…');
+
+        const isSeller = accountType === 'business' || accountType === 'supplier' || accountType === 'agent';
+        const req: [string, Record<string, unknown>] = isSeller
+          ? ['/api/suppliers', { name: name || 'My Business', authUserId: uid, accountType }]
+          : ['/api/profile', {
+              id:       uid,
+              fullName: name || (session.user.user_metadata?.full_name as string | undefined) || '',
+              phone:    session.user.phone ?? '',
+              avatar:   '👤',
+            }];
+
+        // A failure here used to be swallowed, leaving the user with a Google
+        // login and no store — which AuthContext then "helpfully" turned into a
+        // customer account. Check the response and retry once before giving up.
+        let created = false;
+        for (let attempt = 0; attempt < 2 && !created; attempt++) {
+          try {
+            const res = await fetch(req[0], {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify(req[1]),
+            });
+            created = res.ok;
+          } catch { /* network — retry below */ }
+          if (!created && attempt === 0) await new Promise(r => setTimeout(r, 800));
+        }
+
         // While the record above was being created, AuthContext may have
         // already resolved (and cached) this brand-new user as a plain
         // customer. Drop that cache so the next page load resolves the real
         // account type instead of flashing/sticking on the customer UI.
         try { localStorage.removeItem('mg_c_account'); } catch { /* ignore */ }
+
+        if (!created) {
+          setStatus('We could not finish setting up your store. Taking you to your profile…');
+          setTimeout(() => leaveTo('/profile?setup=failed'), 2500);
+          return;
+        }
+
+        // A new seller's next step is paying for the store, so land them on
+        // Billing rather than a profile page they have no reason to visit yet.
+        if (isSeller && accountType !== 'agent') { leaveTo('/billing'); return; }
       }
 
       leaveTo('/profile');

@@ -97,7 +97,9 @@ export default function SignupPage() {
       // existed (it saw a plain customer) — re-resolve now, or a fresh
       // business/supplier lands on the CUSTOMER UI until a manual refresh.
       await refreshAccount().catch(() => {});
-      router.push('/profile');
+      // A new seller's next step is paying for the store — send them straight
+      // to Billing instead of a profile page they have no reason to visit yet.
+      router.push(acctType === 'business' || acctType === 'supplier' ? '/billing' : '/profile');
     } else {
       // Email confirmation required — show "check email" message
       setEmailSent(true);
@@ -113,7 +115,12 @@ export default function SignupPage() {
     if (!name.trim()) { setError(`Enter your ${acctType === 'business' ? 'business' : acctType === 'supplier' ? 'supplier' : acctType === 'agent' ? 'agent' : 'full'} name`); return; }
     setError(''); setLoading(true);
 
-    // Store pending signup data so the callback page can create the Supabase record
+    // The chosen account type has to survive a full round trip to Google. It
+    // rides in the RETURN URL, which Supabase preserves — localStorage does not
+    // survive an origin change (a different port/domain, or a Site-URL
+    // fallback), and losing it silently created a CUSTOMER account for someone
+    // who asked for a store. localStorage is kept only as a secondary copy.
+    const params = new URLSearchParams({ type: acctType, name: name.trim() });
     localStorage.setItem('mogarenta_pending_oauth', JSON.stringify({
       accountType: acctType,
       name:        name.trim(),
@@ -121,7 +128,7 @@ export default function SignupPage() {
 
     const { error: err } = await getSupabase().auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/auth/callback?${params}` },
     });
 
     if (err) {

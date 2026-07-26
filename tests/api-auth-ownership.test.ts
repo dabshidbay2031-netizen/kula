@@ -18,7 +18,7 @@ function builder(table: string) {
   // requireSupplierAccess/canAccessStore filter ownership IN the query, so the
   // mock must return null when the caller isn't the owner.
   let authUserFilter: string | undefined;
-  for (const m of ['select', 'in', 'order', 'limit', 'lt', 'neq', 'is', 'update', 'insert', 'upsert', 'delete']) {
+  for (const m of ['select', 'in', 'order', 'limit', 'lt', 'neq', 'is', 'update', 'insert', 'upsert', 'delete', 'range', 'gte']) {
     b[m] = () => b;
   }
   b.eq = (col: string, val: unknown) => { if (col === 'auth_user_id') authUserFilter = String(val); return b; };

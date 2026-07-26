@@ -11,6 +11,8 @@ import { useStoreActor } from '@/lib/useStoreActor';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import { useRealtimePing } from '@/lib/useRealtimePing';
 import ErrorState from '@/components/ErrorState';
+import Pagination from '@/components/Pagination';
+import { usePagination } from '@/lib/usePagination';
 
 const Receipt = dynamic(() => import('@/components/Receipt'), { ssr: false });
 
@@ -66,6 +68,8 @@ export default function OrdersPage() {
     || ((accountType === 'business' || accountType === 'supplier') && !!currentSupplier);
 
   const [orders, setOrders]         = useState<Order[]>([]);
+  const [hasMore, setHasMore]       = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(false);
   const [expanded, setExpanded]     = useState<string | null>(null);
@@ -78,18 +82,40 @@ export default function OrdersPage() {
   // (no personal orders), so force them onto it.
   const activeTab: Tab = actor.isStaff ? 'store' : (isSeller ? tab : 'mine');
 
+  // Busy stores accumulate hundreds of orders; page them rather than rendering
+  // the lot. Switching tabs re-pages from the start.
+  const orderPager = usePagination(orders, 20, activeTab);
+
+  const PAGE_SIZE = 100;
+
+  /**
+   * Load one page of orders. The API used to cap at 500 with no way to ask for
+   * more, so a long-running store simply lost access to its own older history.
+   * `append` walks further back; `X-Has-More` tells us whether to keep offering.
+   */
+  const fetchPage = useCallback(async (offset: number) => {
+    const base = activeTab === 'store' && storeId != null
+      ? `/api/orders?supplierId=${storeId}`
+      : user ? `/api/orders?userId=${user.id}` : null;
+    if (!base) return null;
+    const url = `${base}&limit=${PAGE_SIZE}&offset=${offset}`;
+    // Orders carry customer PII — the API requires the caller's JWT.
+    const res = await fetch(url, { cache: 'no-store', headers: await authHeaders() });
+    if (!res.ok) throw new Error('request failed');
+    const data = await res.json();
+    return {
+      rows:    Array.isArray(data) ? (data as Order[]) : [],
+      hasMore: res.headers.get('X-Has-More') === '1',
+    };
+  }, [user, activeTab, storeId]);
+
   const loadOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const url = activeTab === 'store' && storeId != null
-        ? `/api/orders?supplierId=${storeId}`
-        : user ? `/api/orders?userId=${user.id}` : null;
-      if (!url) { setOrders([]); if (!silent) setLoading(false); return; }
-      // Orders carry customer PII — the API requires the caller's JWT.
-      const res  = await fetch(url, { cache: 'no-store', headers: await authHeaders() });
-      if (!res.ok) throw new Error('request failed');
-      const data = await res.json();
-      setOrders(Array.isArray(data) ? data : []);
+      const page = await fetchPage(0);
+      if (!page) { setOrders([]); setHasMore(false); if (!silent) setLoading(false); return; }
+      setOrders(page.rows);
+      setHasMore(page.hasMore);
       setError(false);
     } catch {
       // Don't wipe good data on a background refresh; only flag a failed
@@ -98,7 +124,24 @@ export default function OrdersPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [user, activeTab, storeId]);
+  }, [fetchPage]);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const page = await fetchPage(orders.length);
+      if (page) {
+        // De-dupe: a new order arriving mid-scroll would otherwise shift the
+        // window and repeat a row across pages.
+        setOrders(prev => {
+          const seen = new Set(prev.map(o => o.id));
+          return [...prev, ...page.rows.filter(o => !seen.has(o.id))];
+        });
+        setHasMore(page.hasMore);
+      }
+    } catch { /* keep what we have; the button stays available */ }
+    finally { setLoadingMore(false); }
+  }, [fetchPage, orders.length]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   // Live: realtime ping the instant an order lands or changes (my orders via
@@ -228,7 +271,7 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div className="orders-list">
-          {orders.map(order => {
+          {orderPager.visible.map(order => {
             const status    = STATUS_MAP[order.status] ?? STATUS_MAP.pending;
             const isOpen    = expanded === order.id;
             const date      = new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -362,6 +405,20 @@ export default function OrdersPage() {
               </div>
             );
           })}
+          <Pagination
+            page={orderPager.page} totalPages={orderPager.totalPages} onPage={orderPager.setPage}
+            from={orderPager.from} to={orderPager.to} total={orderPager.total} label="orders"
+          />
+
+          {/* Older history beyond the loaded window. The pager above only
+              pages what's in memory; this fetches further back from the server. */}
+          {hasMore && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 20px' }}>
+              <button className="btn btn-secondary" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? 'Loading…' : '↓ Load older orders'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

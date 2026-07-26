@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { User as SbUser } from '@supabase/supabase-js';
 import { getSupabase } from '@/lib/supabase';
+import { useRealtimePing } from '@/lib/useRealtimePing';
 import type { Supplier, UserProfile, AccountType } from '@/lib/types';
 
 /* ── Unified user shape ──────────────────────────────────────────── */
@@ -54,6 +55,19 @@ function writeCachedAccount(uid: string, accountType: AccountType) {
 }
 function clearCachedAccount() {
   try { localStorage.removeItem(ACCOUNT_CACHE); } catch { /* ignore */ }
+}
+
+/**
+ * Is an OAuth signup still creating its store/profile right now?
+ *
+ * True while we're sitting on /auth/callback, or while a pending-signup marker
+ * is present. During that window "this user has no store" means "the callback
+ * hasn't finished POSTing it", so nothing here may conclude they're a customer.
+ */
+function oauthSignupInFlight(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location.pathname.startsWith('/auth/callback')) return true;
+  try { return localStorage.getItem('mogarenta_pending_oauth') != null; } catch { return false; }
 }
 
 /* ── Mapper ──────────────────────────────────────────────────────── */
@@ -163,7 +177,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // ── 3) Genuinely new account (no store, no profile) — create a customer
       //    profile so signup lands somewhere. Reached ONLY when BOTH lookups
       //    returned a conclusive "nothing", so a blip can never trigger it. ──
-      if (profileConclusive && sbUser) {
+      //
+      //    NOT while an OAuth signup is still in flight: on /auth/callback the
+      //    callback view is creating the store this very moment, so "no store"
+      //    means "not yet", not "customer". Racing it here is what turned
+      //    Google sign-ups that chose Business into customer accounts.
+      if (profileConclusive && sbUser && !oauthSignupInFlight()) {
         try {
           const res = await fetch('/api/profile', {
             method:  'POST',
@@ -305,6 +324,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { user: sbUser } } = await getSupabase().auth.getUser();
     await resolveAccount(user.id, sbUser ?? undefined);
   };
+
+  /* Someone changed THIS store's row server-side (an admin ticking ✓ Verified,
+     an approval decision…). Re-read it so the badge appears and the "Request
+     Verification" button disappears without the owner reloading the app.
+     Scoped to this one store's topic, so ordinary catalog edits don't
+     re-resolve the account. */
+  useRealtimePing(
+    [currentSupplier ? `store:${currentSupplier.id}` : null],
+    () => { refreshAccount().catch(() => { /* best-effort */ }); },
+  );
 
   /* ── Update profile ──────────────────────────────────────────── */
   const updateProfile = async (updates: Partial<Pick<UserProfile, 'fullName' | 'phone' | 'avatar' | 'avatarUrl' | 'bio'>>) => {

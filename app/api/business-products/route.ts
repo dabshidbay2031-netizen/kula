@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { requireStaff, canAccessStore } from '@/lib/apiAuth';
+import { requireStaff, canAccessStore, requireSupplierAccess } from '@/lib/apiAuth';
 import { errMsg, isMissingTableError } from '@/lib/apiHelpers';
 import { pingRealtime } from '@/lib/realtimeServer';
 
@@ -64,11 +64,21 @@ function mapBP(row: Record<string, unknown>) {
   };
 }
 
-/** GET /api/business-products?supplierId=X */
+/** GET /api/business-products?supplierId=X
+ *  Returns a store's claimed catalog — including cost, custom prices and stock.
+ *  That's sensitive seller data, so this is gated exactly like the POST below:
+ *  the owner, a platform admin, or a staff cashier of THIS store. Without this
+ *  check a competitor could enumerate supplierId=1..N and read every rival's
+ *  cost basis. */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const supplierId = searchParams.get('supplierId');
   if (!supplierId) return NextResponse.json({ error: 'supplierId required' }, { status: 400 });
+
+  // Ownership gate — same helper the POST handler uses. Returns null on
+  // success, a 401/403 Response otherwise.
+  const denied = await requireSupplierAccess(req, parseInt(supplierId, 10));
+  if (denied) return denied;
 
   try {
     const { data, error } = await getSupabaseAdmin()

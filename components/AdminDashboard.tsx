@@ -9,6 +9,8 @@ import { authHeaders } from '@/lib/clientAuth';
 import { getSupabase } from '@/lib/supabase';
 import ProductImage from '@/components/ProductImage';
 import StoreAvatar from '@/components/StoreAvatar';
+import Pagination from '@/components/Pagination';
+import { usePagination } from '@/lib/usePagination';
 import type { HeroBanner } from '@/app/api/settings/hero/route';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
@@ -26,6 +28,8 @@ interface AdminStats {
   totalBusinesses: number; totalSuppliers: number; totalProducts: number;
   totalOrders: number; totalRevenue: number; totalUsers: number;
   pendingVerifications: number; recentOrders: Order[];
+  /** False until the is_seed flag is deployed — the numbers still include seed volume. */
+  seedExcluded?: boolean;
 }
 interface AdminUser  { id: string; fullName: string; phone: string; avatar: string; verified: boolean; createdAt: string; }
 interface AdminEntry { id: number; userId: string; role: string; name: string; email: string; createdAt: string; }
@@ -80,6 +84,10 @@ export default function AdminDashboard() {
   const [products,  setProducts]  = useState<Product[]>([]);
   const [orders,    setOrders]    = useState<Order[]>([]);
   const [users,     setUsers]     = useState<AdminUser[]>([]);
+  // Filter inputs — kept separate from the data so filtering is a VIEW, never
+  // a mutation of the loaded rows.
+  const [orderStatusFilter, setOrderStatusFilter] = useState('');
+  const [userQuery,         setUserQuery]         = useState('');
   const [admins,    setAdmins]    = useState<AdminEntry[]>([]);
   const [loading,   setLoading]   = useState(false);
 
@@ -120,9 +128,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!prodBiz) { setClaimedForBiz([]); return; }
     let cancelled = false;
-    fetch(`/api/business-products?supplierId=${prodBiz}`)
-      .then(r => r.json())
-      .then((bp) => {
+    (async () => {
+      try {
+        const r = await fetch(`/api/business-products?supplierId=${prodBiz}`, {
+          headers: await authHeaders(),
+        });
+        const bp = await r.json();
         if (cancelled || !Array.isArray(bp)) return;
         setClaimedForBiz(
           bp.filter((x: { product?: Product | null }) => x.product)
@@ -132,8 +143,10 @@ export default function AdminDashboard() {
               stock: Number(x.stockQty ?? 0),
             }) as Product),
         );
-      })
-      .catch(() => setClaimedForBiz([]));
+      } catch {
+        setClaimedForBiz([]);
+      }
+    })();
     return () => { cancelled = true; };
   }, [prodBiz]);
 
@@ -231,6 +244,31 @@ export default function AdminDashboard() {
   // above the guard early-returns below — so it runs on every render (React
   // requires a stable, unconditional hook order).
   const [bountyDraft, setBountyDraft] = useState<Record<number, string>>({});
+
+  /* ── Pagination ────────────────────────────────────────────────
+     These tables rendered every row at once; Products was capped at a
+     hard-coded 200 with the rest simply unreachable. Each pager resets to
+     page 1 when its filters change. */
+  /* Orders + users are filtered as DERIVED views, the same way products
+     already were. The previous handlers filtered the state arrays in place,
+     so every non-matching row was destroyed until the next refetch. */
+  const filteredOrders = useMemo(() => {
+    if (!orderStatusFilter) return orders;
+    return orders.filter((o: Order & { status?: string }) =>
+      (o.status ?? '').toLowerCase() === orderStatusFilter);
+  }, [orders, orderStatusFilter]);
+
+  const filteredUsers = useMemo(() => {
+    const q = userQuery.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(u =>
+      u.fullName?.toLowerCase().includes(q) || u.phone?.includes(q));
+  }, [users, userQuery]);
+
+  const bizPager   = usePagination(filteredBusinesses, 25, bizQuery);
+  const prodPager  = usePagination(filteredProducts, 25, `${prodQuery}|${prodCat}|${prodBiz}`);
+  const orderPager = usePagination(filteredOrders, 25, orderStatusFilter);
+  const userPager  = usePagination(filteredUsers, 25, userQuery);
 
   /* ── Payout requests (admin desk) ──────────────────────────────── */
   const [payouts, setPayouts] = useState<AdminPayout[]>([]);
@@ -538,6 +576,15 @@ export default function AdminDashboard() {
                         </div>
                       ))}
                     </div>
+
+                    {/* Say plainly whether these are real numbers or still
+                        carrying seeded volume — an unlabelled KPI is worse
+                        than no KPI. */}
+                    <div style={{ fontSize:'.75rem', color:'var(--text-muted)', margin:'-10px 0 18px' }}>
+                      {stats.seedExcluded
+                        ? '✅ Seed and test data excluded — these are real figures.'
+                        : '⚠️ Includes seed/test data. Run RUN-THIS-grants-and-seed-flags.sql to exclude it.'}
+                    </div>
                     {stats.pendingVerifications > 0 && (
                       <div style={{ background:'#FEF3C7', border:'1px solid #F59E0B', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:'.88rem', color:'#92400E' }}>
                         ⏳ <strong>{stats.pendingVerifications}</strong> verification request{stats.pendingVerifications > 1 ? 's' : ''} pending
@@ -606,7 +653,7 @@ export default function AdminDashboard() {
                         {isAdmin && <th style={th}>Actions</th>}
                       </tr></thead>
                       <tbody>
-                        {filteredBusinesses.map(b => (
+                        {bizPager.visible.map(b => (
                           <tr key={b.id}>
                             <td style={td}>
                               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -697,6 +744,10 @@ export default function AdminDashboard() {
                       </tbody>
                     </table>
                   </div>
+                  <Pagination
+                    page={bizPager.page} totalPages={bizPager.totalPages} onPage={bizPager.setPage}
+                    from={bizPager.from} to={bizPager.to} total={bizPager.total} label="businesses"
+                  />
                 </div>
               </div>
             )}
@@ -758,7 +809,7 @@ export default function AdminDashboard() {
                         {isAdmin && <th style={th}>Actions</th>}
                       </tr></thead>
                       <tbody>
-                        {filteredProducts.slice(0,200).map(p => {
+                        {prodPager.visible.map(p => {
                           const sup = businesses.find(b => b.id === p.supplierId);
                           return (
                             <tr key={p.id}>
@@ -805,11 +856,10 @@ export default function AdminDashboard() {
                       </tbody>
                     </table>
                   </div>
-                  {filteredProducts.length > 200 && (
-                    <div style={{ padding:'10px 16px', fontSize:'.8rem', color:'var(--text-muted)', borderTop:'1px solid var(--border)' }}>
-                      Showing first 200 of {filteredProducts.length} matching products. Search or filter to narrow down.
-                    </div>
-                  )}
+                  <Pagination
+                    page={prodPager.page} totalPages={prodPager.totalPages} onPage={prodPager.setPage}
+                    from={prodPager.from} to={prodPager.to} total={prodPager.total} label="products"
+                  />
                 </div>
               </div>
             )}
@@ -818,12 +868,13 @@ export default function AdminDashboard() {
             {tab === 'orders' && (
               <div>
                 <div style={{ display:'flex', gap:10, marginBottom:14 }}>
+                  {/* Filtering must never mutate the source list. The old
+                      handler did setOrders(prev => prev.filter(...)), which
+                      DELETED the non-matching orders from state — switching
+                      back to "All" showed a wrong list until a full refetch. */}
                   <select className="form-input" style={{ maxWidth:180 }}
-                    onChange={e => {
-                      const v = e.target.value;
-                      if (!v) load('orders');
-                      else setOrders(prev => prev.filter((o: Order & { status?: string }) => (o.status ?? '').toLowerCase() === v));
-                    }}>
+                    value={orderStatusFilter}
+                    onChange={e => setOrderStatusFilter(e.target.value)}>
                     <option value="">All Statuses</option>
                     <option value="pending">Pending</option>
                     <option value="completed">Completed</option>
@@ -839,7 +890,7 @@ export default function AdminDashboard() {
                         <th style={th}>Payment</th><th style={th}>Status</th><th style={th}>Date</th>
                       </tr></thead>
                       <tbody>
-                        {(orders as (Order & { customerName?: string; customerPhone?: string; items?: {id:number;qty:number}[]; total?: number; paymentMethod?: string; status?: string; createdAt?: string })[]).map(o => (
+                        {(orderPager.visible as (Order & { customerName?: string; customerPhone?: string; items?: {id:number;qty:number}[]; total?: number; paymentMethod?: string; status?: string; createdAt?: string })[]).map(o => (
                           <React.Fragment key={o.id}>
                             <tr style={{ cursor:'pointer' }} onClick={() => setExpandedOrder(expandedOrder === o.id ? null : o.id)}>
                               <td style={td}><code style={{ fontSize:'.75rem' }}>{o.id}</code></td>
@@ -877,6 +928,10 @@ export default function AdminDashboard() {
                       </tbody>
                     </table>
                   </div>
+                  <Pagination
+                    page={orderPager.page} totalPages={orderPager.totalPages} onPage={orderPager.setPage}
+                    from={orderPager.from} to={orderPager.to} total={orderPager.total} label="orders"
+                  />
                 </div>
               </div>
             )}
@@ -885,12 +940,10 @@ export default function AdminDashboard() {
             {tab === 'users' && (
               <div>
                 <div style={{ marginBottom:14 }}>
+                  {/* Derived view — searching no longer destroys the user list. */}
                   <input className="form-input" placeholder="Search users by name or phone…" style={{ maxWidth:320 }}
-                    onChange={e => {
-                      const q = e.target.value.toLowerCase();
-                      if (!q) load('users');
-                      else setUsers(prev => prev.filter(u => u.fullName?.toLowerCase().includes(q) || u.phone?.includes(q)));
-                    }}
+                    value={userQuery}
+                    onChange={e => setUserQuery(e.target.value)}
                   />
                 </div>
                 <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', overflow:'hidden' }}>
@@ -901,7 +954,7 @@ export default function AdminDashboard() {
                         <th style={th}>Verified</th><th style={th}>Joined</th>
                       </tr></thead>
                       <tbody>
-                        {users.map(u => (
+                        {userPager.visible.map(u => (
                           <tr key={u.id}>
                             <td style={td}>
                               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -925,6 +978,10 @@ export default function AdminDashboard() {
                       </tbody>
                     </table>
                   </div>
+                  <Pagination
+                    page={userPager.page} totalPages={userPager.totalPages} onPage={userPager.setPage}
+                    from={userPager.from} to={userPager.to} total={userPager.total} label="users"
+                  />
                 </div>
               </div>
             )}

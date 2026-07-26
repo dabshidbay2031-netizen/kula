@@ -4,6 +4,7 @@ import { errMsg, isMissingColumnError } from '@/lib/apiHelpers';
 import { getAuthUser, getAdminRole, canAccessStore } from '@/lib/apiAuth';
 import { getCashierActor } from '@/lib/cashierAuth';
 import { isValidSlug } from '@/lib/slug';
+import { pingRealtime } from '@/lib/realtimeServer';
 
 /** Privileged fields only a platform admin may change (not the store owner). */
 const ADMIN_ONLY_FIELDS = ['verified', 'approvalStatus', 'accountType'] as const;
@@ -41,8 +42,10 @@ function mapSupplier(s: Record<string, unknown>) {
        client the columns EXIST, so "not paid" can't be confused with
        "migration_subscriptions.sql hasn't run" (which must never lock a seller). */
     billingEnabled:         'subscription_paid_at' in s,
+    monthlyBillingEnabled:  'subscription_period_end' in s,
     subscriptionPaidAt:     (s.subscription_paid_at as string | undefined) ?? null,
     subscriptionRefundedAt: (s.subscription_refunded_at as string | undefined) ?? null,
+    subscriptionPeriodEnd:  (s.subscription_period_end as string | undefined) ?? null,
     subscriptionPlan:       (s.subscription_plan as string | undefined) ?? null,
     subscriptionAmount:     s.subscription_amount != null ? Number(s.subscription_amount) : null,
   };
@@ -134,6 +137,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { data, error } = await getSupabaseAdmin()
       .from('suppliers').update(updates).eq('id', id).select().single();
     if (error) throw error;
+    // Store details live on every product card AND in the owner's own session
+    // (the ✓ verified badge, the name, online-only…). Without these pings an
+    // admin verifying a store left the owner staring at "Request Verification"
+    // until they manually reloaded the whole app.
+    //   catalog  → everyone's product cards / store lists
+    //   store:id → that owner's own AuthContext (see AuthProvider)
+    pingRealtime(['catalog', `store:${id}`]);
     return NextResponse.json(mapSupplier(data));
   } catch (e) {
     // Pre-migration schema: optional columns (slug, latitude, longitude) may

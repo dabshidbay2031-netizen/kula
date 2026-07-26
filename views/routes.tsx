@@ -46,8 +46,12 @@ export const ROUTES: RouteDef[] = [
   { pattern: '/admin',          component: lazy(() => import('@/views/AdminView')) },
   { pattern: '/staff',          component: lazy(() => import('@/views/StaffView')) },
   { pattern: '/cashier-login',  component: lazy(() => import('@/views/CashierLoginView')) },
+  // Information pages — all rendered by LegalView, which switches on the path.
   { pattern: '/privacy',        component: lazy(() => import('@/views/LegalView')) },
   { pattern: '/terms',          component: lazy(() => import('@/views/LegalView')) },
+  { pattern: '/refunds',        component: lazy(() => import('@/views/LegalView')) },
+  { pattern: '/about',          component: lazy(() => import('@/views/LegalView')) },
+  { pattern: '/contact',        component: lazy(() => import('@/views/LegalView')) },
   { pattern: '/auth/login',     component: lazy(() => import('@/views/LoginView')) },
   { pattern: '/auth/signup',    component: lazy(() => import('@/views/SignupView')) },
   { pattern: '/auth/callback',  component: lazy(() => import('@/views/AuthCallbackView')) },

@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  deriveSubscription, planForAccountType, priceForAccountType,
-  SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS,
+  deriveSubscription, planForAccountType, priceForAccountType, nextPeriodEnd, periodEndFor,
+  SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_PERIOD_DAYS,
 } from '@/lib/subscription';
 
 const DAY = 86_400_000;
 const NOW = new Date('2026-07-16T12:00:00Z');
-const ago = (days: number) => new Date(NOW.getTime() - days * DAY).toISOString();
+const ago    = (days: number) => new Date(NOW.getTime() - days * DAY).toISOString();
+const inDays = (days: number) => new Date(NOW.getTime() + days * DAY).toISOString();
 
 describe('pricing', () => {
   it('charges suppliers $24.99 and businesses $14.99', () => {
@@ -83,8 +84,9 @@ describe('deriveSubscription — 7-day money-back window', () => {
     expect(s.daysLeftToRefund).toBe(0);
   });
 
-  it('is not refundable long after the window (grandfathered stores)', () => {
-    const s = deriveSubscription({ accountType: 'business', subscriptionPaidAt: ago(400) }, NOW);
+  it('is not refundable once the window closes, while the month still runs', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(10), subscriptionPeriodEnd: inDays(20) }, NOW);
     expect(s.status).toBe('active');
     expect(s.refundable).toBe(false);
     expect(s.locked).toBe(false);
@@ -101,5 +103,81 @@ describe('deriveSubscription — 7-day money-back window', () => {
     const paidAt = new Date(NOW.getTime() - SUBSCRIPTION_TRIAL_DAYS * DAY).toISOString();
     const s = deriveSubscription({ accountType: 'business', subscriptionPaidAt: paidAt }, NOW);
     expect(s.refundable).toBe(false);
+  });
+});
+
+describe('deriveSubscription — monthly billing cycle', () => {
+  it('keeps access open while the paid month runs, and counts the days left', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(20), subscriptionPeriodEnd: inDays(10) }, NOW);
+    expect(s.status).toBe('active');
+    expect(s.locked).toBe(false);
+    expect(s.renewalDue).toBe(false);
+    expect(s.daysLeftInPeriod).toBe(10);
+  });
+
+  it('LOCKS the dashboard once the paid month runs out', () => {
+    const s = deriveSubscription(
+      { accountType: 'supplier', subscriptionPaidAt: ago(31), subscriptionPeriodEnd: ago(1) }, NOW);
+    expect(s.status).toBe('expired');
+    expect(s.locked).toBe(true);
+    expect(s.renewalDue).toBe(true);
+    expect(s.daysLeftInPeriod).toBe(0);
+    expect(s.refundable).toBe(false);
+  });
+
+  it('treats the period boundary (to the ms) as expired', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(30), subscriptionPeriodEnd: NOW.toISOString() }, NOW);
+    expect(s.locked).toBe(true);
+  });
+
+  it('derives a 30-day period from the payment when the column is null', () => {
+    const s = deriveSubscription({ accountType: 'business', subscriptionPaidAt: ago(2) }, NOW);
+    expect(s.periodEnd).toBe(periodEndFor(ago(2)));
+    expect(s.daysLeftInPeriod).toBe(SUBSCRIPTION_PERIOD_DAYS - 2);
+    expect(s.locked).toBe(false);
+  });
+
+  it('expires a store whose derived month has passed', () => {
+    // A payment 400 days ago with no stored period is long overdue.
+    const s = deriveSubscription({ accountType: 'business', subscriptionPaidAt: ago(400) }, NOW);
+    expect(s.status).toBe('expired');
+    expect(s.locked).toBe(true);
+  });
+
+  it('does NOT enforce expiry before migration_v4_3 adds the column', () => {
+    // Grandfathered stores carry paid_at = created_at; enforcing a month on a
+    // DB without the period column would lock every live seller out at deploy.
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(400), monthlyBillingEnabled: false }, NOW);
+    expect(s.status).toBe('active');
+    expect(s.locked).toBe(false);
+    expect(s.periodEnd).toBeNull();
+  });
+
+  it('never reports a renewal for account types that do not pay', () => {
+    const s = deriveSubscription({ accountType: 'agent', subscriptionPaidAt: ago(400) }, NOW);
+    expect(s.locked).toBe(false);
+    expect(s.renewalDue).toBe(false);
+    expect(s.periodEnd).toBeNull();
+  });
+});
+
+describe('nextPeriodEnd — renewing must not burn paid time', () => {
+  it('extends an unexpired period instead of restarting it', () => {
+    const end = nextPeriodEnd(inDays(10), NOW);
+    expect(new Date(end).getTime())
+      .toBe(NOW.getTime() + (10 + SUBSCRIPTION_PERIOD_DAYS) * DAY);
+  });
+
+  it('starts 30 days from today when the period already lapsed', () => {
+    const end = nextPeriodEnd(ago(5), NOW);
+    expect(new Date(end).getTime()).toBe(NOW.getTime() + SUBSCRIPTION_PERIOD_DAYS * DAY);
+  });
+
+  it('starts 30 days from today for a first payment', () => {
+    const end = nextPeriodEnd(null, NOW);
+    expect(new Date(end).getTime()).toBe(NOW.getTime() + SUBSCRIPTION_PERIOD_DAYS * DAY);
   });
 });

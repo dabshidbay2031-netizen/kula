@@ -181,6 +181,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
    Terminal exits (cancelled/refunded/deleted) are allowed from any live
    stage, but a completed order can't go back to processing, a shipped one
    can't become pending again, and a terminal order can't be revived. */
+/** The only statuses an order may hold — mirrors the DB CHECK constraint. */
+const VALID_STATUS = new Set([
+  'pending', 'processing', 'shipped', 'completed',
+  'cancelled', 'refunded', 'bulk_pending', 'deleted',
+]);
+
 const STAGE_RANK: Record<string, number> = {
   bulk_pending: 0, pending: 0, processing: 1, shipped: 2, completed: 3,
 };
@@ -205,6 +211,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = await req.json();
   const updates: Record<string, unknown> = {};
   if (body.status !== undefined) {
+    // Validate against the whitelist BEFORE the forward-only rule. That rule
+    // deliberately passes unknown labels through ("don't block"), so without
+    // this a status of "h4ck3d" reached the DB and came back as an ugly 500
+    // from the CHECK constraint instead of a clean 400.
+    if (!VALID_STATUS.has(String(body.status))) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    }
     const { data: cur } = await getSupabaseAdmin()
       .from('orders').select('status').eq('id', orderId).maybeSingle();
     const violation = cur ? forwardOnlyViolation(String(cur.status ?? 'pending'), String(body.status)) : null;

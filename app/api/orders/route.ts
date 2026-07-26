@@ -6,6 +6,9 @@ import { getAuthUser, isAdminUser, ownsStoreOrAdmin, requireSupplierAccess } fro
 import { pingRealtime, runAfterResponse } from '@/lib/realtimeServer';
 import { sendPushToStores, sellerStoreIds } from '@/lib/pushNotify';
 import { createNotifications } from '@/lib/notify';
+import { computePlatformFee } from '@/lib/fees';
+import { unitPriceFor } from '@/lib/tierPricing';
+import type { PriceTier } from '@/lib/types';
 
 function mapOrder(o: Record<string, unknown>) {
   return {
@@ -17,6 +20,10 @@ function mapOrder(o: Record<string, unknown>) {
     subtotal:      o.subtotal,
     discount:      o.discount,
     total:         o.total,
+    /* Platform transaction fee (migration_v4_2) — buyer-charged portion, and
+       the portion the store chose to absorb. Absent columns map to 0. */
+    platformFee:     Number(o.platform_fee ?? 0),
+    feePaidByStore:  Number(o.fee_paid_by_store ?? 0),
     paymentMethod: o.payment_method,
     status:        o.status,
     notes:         o.notes          ?? null,
@@ -35,6 +42,42 @@ function newOrderId(prefix: 'ORD' | 'BULK'): string {
 }
 
 const VALID_STATUS = new Set(['pending', 'processing', 'shipped', 'completed', 'cancelled', 'refunded', 'bulk_pending']);
+
+/**
+ * Page window for order listings. Replaces the old hard `.limit(500)`, which
+ * made a busy store's older orders permanently invisible with no way to ask
+ * for them. `X-Has-More` on the response tells the client whether to offer
+ * "load more".
+ */
+const MAX_PAGE = 500;
+function pageParams(sp: URLSearchParams): { limit: number; offset: number } {
+  const rawLimit = parseInt(sp.get('limit') ?? '', 10);
+  const rawOff   = parseInt(sp.get('offset') ?? '', 10);
+  const limit  = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_PAGE) : 100;
+  const offset = Number.isFinite(rawOff) && rawOff > 0 ? rawOff : 0;
+  return { limit, offset };
+}
+
+/**
+ * Payment methods the platform actually supports. An unrecognised string used
+ * to be stored verbatim AND treated as cash — so `paymentMethod: "freemoney"`
+ * silently skipped the 3% platform fee (isOnlinePayment only matches the known
+ * online wallets). Anything not on this list is now coerced to 'cash'.
+ *
+ * 'bulk' MUST stay here: `isBulk` is derived from it and drives the entire
+ * wholesale order path.
+ */
+const VALID_PAYMENT_METHODS = new Set([
+  'cash', 'bulk', 'invoice', 'card',
+  'sifalo', 'waafi', 'evc', 'edahab', 'pbwallet',
+]);
+
+/**
+ * Statuses a BUYER may request when creating an order. Anything beyond these
+ * (completed, shipped…) is a seller/staff decision — otherwise a direct API
+ * call could self-mark an order 'completed' and skip delivery and payment.
+ */
+const BUYER_SETTABLE_STATUS = new Set(['pending', 'bulk_pending']);
 
 /**
  * Fire the live-update fan-out for a freshly created order — realtime pings
@@ -131,15 +174,25 @@ export async function GET(req: Request) {
       // catalog product ids are shared across stores (and were re-used when the
       // catalog was reseeded), so item-matching leaked every other store's
       // orders into this store's list.
+      // Paginated: the old hard .limit(500) silently hid a long-running
+      // store's older orders with no way to reach them.
+      const { limit, offset } = pageParams(searchParams);
       const { data: orderData, error } = await getSupabaseAdmin()
         .from('orders').select('*')
         .eq('supplier_id', supplierId)
         .order('created_at', { ascending: false })
-        .limit(500);
+        .range(offset, offset + limit - 1);
       if (error) throw error;
-      return NextResponse.json((orderData ?? []).map(o => mapOrder(o as Record<string, unknown>)));
-    } catch {
-      return NextResponse.json([]);
+      const rows = (orderData ?? []).map(o => mapOrder(o as Record<string, unknown>));
+      return NextResponse.json(rows, {
+        headers: { 'X-Has-More': rows.length === limit ? '1' : '0' },
+      });
+    } catch (e) {
+      // NEVER return [] here. An empty array with HTTP 200 makes a server
+      // failure look like "no sales in this period" — the seller sees a
+      // cheerful zero and never learns their data failed to load.
+      console.error('[orders GET supplier]', errMsg(e));
+      return NextResponse.json({ error: 'Failed to load orders' }, { status: 500 });
     }
   }
 
@@ -157,17 +210,24 @@ export async function GET(req: Request) {
   }
 
   try {
+    const { limit, offset } = pageParams(searchParams);
     let query = getSupabaseAdmin()
       .from('orders')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (userId) query = query.eq('user_id', userId);
     const { data, error } = await query;
     if (error) throw error;
-    return NextResponse.json(data.map(mapOrder));
-  } catch {
-    return NextResponse.json([]);
+    const rows = (data ?? []).map(mapOrder);
+    return NextResponse.json(rows, {
+      headers: { 'X-Has-More': rows.length === limit ? '1' : '0' },
+    });
+  } catch (e) {
+    // Same rule as above: a failure must not masquerade as "no orders".
+    console.error('[orders GET]', errMsg(e));
+    return NextResponse.json({ error: 'Failed to load orders' }, { status: 500 });
   }
 }
 
@@ -207,11 +267,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'items must be a non-empty array of { id, qty } with positive integer values' }, { status: 400 });
   }
 
-  const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : 'cash';
+  const rawMethod     = typeof body.paymentMethod === 'string' ? body.paymentMethod.toLowerCase() : 'cash';
+  const paymentMethod = VALID_PAYMENT_METHODS.has(rawMethod) ? rawMethod : 'cash';
   const isBulk        = paymentMethod === 'bulk';
-  const requestedStatus = typeof body.status === 'string' && VALID_STATUS.has(body.status)
-    ? body.status
-    : (isBulk ? 'bulk_pending' : 'pending');
+
+  // Status: buyers may only open an order as pending. A seller-only status
+  // (completed/shipped/…) requires proof the caller runs the store it is
+  // attributed to — checked below, once we know supplierId.
+  let requestedStatus = isBulk ? 'bulk_pending' : 'pending';
+  const askedStatus   = typeof body.status === 'string' ? body.status : null;
   const customerName  = String(body.customerName  ?? '').slice(0, 200);
   const customerPhone = String(body.customerPhone ?? '').slice(0, 50);
   const userId        = body.userId != null ? String(body.userId) : null;
@@ -225,6 +289,40 @@ export async function POST(req: Request) {
     ? Number(body.supplierId) : null;
 
   const sb = getSupabaseAdmin();
+
+  // ── Requested status — STAFF ONLY beyond 'pending' ────────────
+  if (askedStatus) {
+    if (!VALID_STATUS.has(askedStatus)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    }
+    if (BUYER_SETTABLE_STATUS.has(askedStatus)) {
+      requestedStatus = askedStatus;
+    } else {
+      // 'completed'/'shipped'/… — only the store that owns the sale (or an
+      // admin) may open an order already in that state.
+      const staff = await getAuthUser(req);
+      const allowed = staff != null && supplierId != null
+        && await ownsStoreOrAdmin(staff.id, supplierId);
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Forbidden — only the store can set that status' }, { status: 403 });
+      }
+      requestedStatus = askedStatus;
+    }
+  }
+
+  // ── Idempotency — a double-tapped "Place Order" must not double-charge ──
+  // The client sends one key per checkout attempt; a repeat of the same key
+  // returns the ORIGINAL order instead of creating a second one.
+  const idempotencyKey = req.headers.get('Idempotency-Key')?.slice(0, 100) || null;
+  if (idempotencyKey) {
+    const { data: dupe, error: dupeErr } = await sb
+      .from('orders').select('*').eq('idempotency_key', idempotencyKey).maybeSingle();
+    // A missing column (pre-migration) errors — ignore and create normally.
+    if (!dupeErr && dupe) {
+      return NextResponse.json({ ...mapOrder(dupe as Record<string, unknown>), duplicate: true }, { status: 200 });
+    }
+  }
 
   // ── Manual (POS) discount — STAFF ONLY ────────────────────────
   // A public/guest order can never discount itself (that would let a buyer
@@ -240,11 +338,45 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── Pricing inputs: bulk tiers + who pays the platform fee ────
+  // Read from the DB, never the client. Both columns are optional on older
+  // schemas, so the select degrades rather than failing the sale.
+  let fee = { buyerFee: 0, storeFee: 0, totalFee: 0 };
+  let hasTieredItem = false;
+  if (!isBulk) {
+    const { data: withFeeCol } = await sb
+      .from('products').select('id, price, price_tiers, fee_absorbed_by_store').in('id', items.map(i => i.id));
+    let feeRows = withFeeCol as Record<string, unknown>[] | null;
+    if (!feeRows) {
+      const { data } = await sb
+        .from('products').select('id, price, price_tiers').in('id', items.map(i => i.id));
+      feeRows = data as Record<string, unknown>[] | null;
+    }
+    if (feeRows?.length) {
+      const byId = new Map(feeRows.map(p => [p.id as number, p as Record<string, unknown>]));
+      // The fee is 3% of what's ACTUALLY charged, so it must see the tier price.
+      const lines = items.map(i => {
+        const p     = byId.get(i.id);
+        const tiers = p?.price_tiers as PriceTier[] | null | undefined;
+        if (Array.isArray(tiers) && tiers.length) hasTieredItem = true;
+        return {
+          price: unitPriceFor(Number(p?.price) || 0, tiers, i.qty),
+          qty:   i.qty,
+          feeAbsorbedByStore: Boolean(p?.fee_absorbed_by_store),
+        };
+      });
+      fee = computePlatformFee(lines, paymentMethod);
+    }
+  }
+
   // ── Atomic path: place_order() RPC (schema v2) for real sales ──
   // Locks product rows, verifies + decrements stock, consumes the coupon,
   // and inserts the order in ONE transaction. Skipped when a manual staff
   // discount applies — the RPC can't take one, so we use the JS path below.
-  if (!isBulk && staffDiscount === 0) {
+  // Also skipped when any item has bulk tiers: the RPC prices from the list
+  // price and knows nothing about tiers, so it would silently charge the
+  // wholesale buyer full price. The JS path below applies them properly.
+  if (!isBulk && staffDiscount === 0 && !hasTieredItem) {
     try {
       const { data, error } = await sb.rpc('place_order', {
         p_customer_name:  customerName,
@@ -283,6 +415,23 @@ export async function POST(req: Request) {
             } catch { /* try the next, leaner stamp */ }
           }
         }
+        // The RPC knows nothing about the platform fee, so add it here: record
+        // both portions and top up the buyer's total. Best-effort — on a DB
+        // without migration_v4_2 the update fails and the order simply carries
+        // no fee, rather than the sale being lost.
+        if (fee.totalFee > 0) {
+          const newTotal = Math.round(((Number(created.total) || 0) + fee.buyerFee) * 100) / 100;
+          try {
+            const { error: feeErr } = await sb.from('orders')
+              .update({ platform_fee: fee.buyerFee, fee_paid_by_store: fee.storeFee, total: newTotal })
+              .eq('id', String(created.id));
+            if (!feeErr) {
+              created.platform_fee      = fee.buyerFee;
+              created.fee_paid_by_store = fee.storeFee;
+              created.total             = newTotal;
+            }
+          } catch { /* pre-migration DB — order still stands */ }
+        }
         notifyNewOrder(String(created.id), userId, items, Number(created.total ?? 0));
         return NextResponse.json(mapOrder(created), { status: 201 });
       }
@@ -306,8 +455,16 @@ export async function POST(req: Request) {
   try {
     // 1. Price every item from the DB — never from the client
     const ids = items.map(i => i.id);
-    const { data: prods, error: prodErr } = await sb
-      .from('products').select('id, price, stock, sold').in('id', ids);
+    const withTiers = await sb
+      .from('products').select('id, price, stock, sold, price_tiers, supplier_id').in('id', ids);
+    let prods: Record<string, unknown>[] | null = withTiers.data as Record<string, unknown>[] | null;
+    let prodErr = withTiers.error;
+    // price_tiers predates this feature on some schemas — retry without it.
+    if (prodErr) {
+      const legacy = await sb.from('products').select('id, price, stock, sold, supplier_id').in('id', ids);
+      prods   = legacy.data as Record<string, unknown>[] | null;
+      prodErr = legacy.error;
+    }
     if (prodErr) throw prodErr;
 
     const byId = new Map((prods ?? []).map(p => [p.id as number, p as Record<string, unknown>]));
@@ -320,7 +477,9 @@ export async function POST(req: Request) {
       if (!isBulk && (p.stock as number) < item.qty) {
         return NextResponse.json({ error: `Insufficient stock for product ${item.id}` }, { status: 409 });
       }
-      subtotal += (p.price as number) * item.qty;
+      // Wholesale bulk pricing: the unit price depends on how many are bought.
+      // Applied server-side so the tier discount is real, not just displayed.
+      subtotal += unitPriceFor(p.price as number, p.price_tiers as PriceTier[] | null, item.qty) * item.qty;
     }
     subtotal = Math.round(subtotal * 100) / 100;
 
@@ -351,16 +510,121 @@ export async function POST(req: Request) {
       discount = Math.round(Math.min(discount + staffDiscount, subtotal) * 100) / 100;
     }
 
-    const total = Math.max(Math.round((subtotal - discount) * 100) / 100, 0);
+    // The buyer-charged portion of the platform fee rides on top of the total;
+    // the absorbed portion is recorded but NOT charged to the buyer.
+    const total = Math.max(Math.round((subtotal - discount + fee.buyerFee) * 100) / 100, 0);
 
     // Snapshot the server-priced unit price onto each line item, so a later
     // price change can never retroactively re-value this sale (the payout
     // wallet reads this frozen price for legacy/unattributed orders).
-    const pricedItems = items.map(i => ({
-      id: i.id, qty: i.qty, price: Number(byId.get(i.id)?.price) || 0,
-    }));
+    const pricedItems = items.map(i => {
+      const p = byId.get(i.id);
+      return {
+        id: i.id, qty: i.qty,
+        // Freeze the TIER-adjusted unit price, not the list price, so the
+        // receipt and the payout wallet both value the sale as it was sold.
+        price: unitPriceFor(Number(p?.price) || 0, p?.price_tiers as PriceTier[] | null, i.qty),
+      };
+    });
 
-    // 3. Insert the order FIRST — stock only moves after the order exists
+    // 3a. ATOMIC PATH — one transaction for the whole sale.
+    //
+    // place_order_v2 takes the prices we just computed (so tiers and the staff
+    // discount are honoured, which the original place_order could not do) and
+    // does lock → verify → decrement → insert order → insert lines together.
+    // Nothing here can half-happen. Falls through to the step-by-step path
+    // below only when the function isn't deployed.
+    {
+      const orderPayload: Record<string, unknown> = {
+        id:              newOrderId(isBulk ? 'BULK' : 'ORD'),
+        customer_name:   customerName,
+        customer_phone:  customerPhone,
+        user_id:         userId,
+        items:           pricedItems,
+        subtotal, discount, total,
+        payment_method:  paymentMethod,
+        status:          requestedStatus,
+        notes,
+        supplier_id:     supplierId,
+        session_id:      sessionId,
+        cashier_name:    cashierName,
+        idempotency_key: idempotencyKey,
+        skip_stock:      isBulk,          // wholesale enquiries don't move stock
+      };
+      const rpcItems = pricedItems.map(pi => ({
+        id:          pi.id,
+        qty:         pi.qty,
+        unit_price:  pi.price,
+        supplier_id: (byId.get(pi.id)?.supplier_id as number | undefined) ?? supplierId ?? null,
+      }));
+
+      const { data: v2, error: v2Err } = await sb.rpc('place_order_v2', {
+        p_order: orderPayload, p_items: rpcItems,
+      });
+
+      if (!v2Err && v2) {
+        const created = v2 as Record<string, unknown>;
+        notifyNewOrder(String(created.id), userId, items, total);
+        return NextResponse.json(mapOrder(created), { status: 201 });
+      }
+      // A genuine stock refusal must surface as 409, not fall through and
+      // decrement a second time on the legacy path.
+      if (v2Err && /INSUFFICIENT_STOCK/.test(String(v2Err.message ?? ''))) {
+        const pid = String(v2Err.message).split('INSUFFICIENT_STOCK:')[1]?.trim();
+        return NextResponse.json(
+          { error: `Insufficient stock for product ${pid ?? ''}`.trim() }, { status: 409 });
+      }
+      if (v2Err && /PRODUCT_MISSING/.test(String(v2Err.message ?? ''))) {
+        const pid = String(v2Err.message).split('PRODUCT_MISSING:')[1]?.trim();
+        return NextResponse.json({ error: `Product ${pid ?? ''} not found`.trim() }, { status: 400 });
+      }
+      // Anything else (function absent on this DB) → legacy path below.
+    }
+
+    // 3b. Take the stock FIRST, atomically, before any order row exists.
+    //
+    //    The old order was: insert order → then decrement using the stale
+    //    snapshot with no guard. Two buyers could both read stock=1, both pass
+    //    the check, and both write stock=0 — one apple sold twice. Worse, a
+    //    crash between the two steps left a paid order that never moved stock.
+    //
+    //    decrement_stock() does `stock = stock - qty WHERE id = ? AND stock >= ?`
+    //    inside the DB, so the read-modify-write can't interleave. If any line
+    //    fails we put back everything already taken and refuse the order.
+    const taken: { id: number; qty: number }[] = [];
+    if (!isBulk) {
+      for (const item of items) {
+        let ok = false;
+        const { data: rpcOk, error: rpcErr } = await sb
+          .rpc('decrement_stock', { p_id: item.id, p_qty: item.qty });
+        if (!rpcErr) {
+          ok = rpcOk === true;
+        } else {
+          // Pre-migration DB: conditional update is still far better than none.
+          const p = byId.get(item.id)!;
+          const { data: upd } = await sb.from('products')
+            .update({
+              stock: Math.max((p.stock as number) - item.qty, 0),
+              sold:  ((p.sold as number) ?? 0) + item.qty,
+            })
+            .eq('id', item.id)
+            .gte('stock', item.qty)
+            .select('id');
+          ok = Array.isArray(upd) && upd.length > 0;
+        }
+
+        if (!ok) {
+          for (const t of taken) {
+            try { await sb.rpc('restore_stock', { p_id: t.id, p_qty: t.qty }); } catch { /* best effort */ }
+          }
+          return NextResponse.json(
+            { error: `Insufficient stock for product ${item.id}` }, { status: 409 });
+        }
+        taken.push({ id: item.id, qty: item.qty });
+      }
+    }
+
+    // 4. Insert the order. If this fails, hand the stock back.
     const basePayload: Record<string, unknown> = {
       id:             newOrderId(isBulk ? 'BULK' : 'ORD'),
       customer_name:  customerName,
@@ -380,12 +644,23 @@ export async function POST(req: Request) {
     // session_id (FK to pos_sessions): a sale rung up on a register that was
     // opened OFFLINE references a session not yet in the DB, so on sync the FK
     // fails — we then keep everything except session_id.
-    const withNotes = { ...basePayload, notes };
+    // The idempotency key rides on the order row so a retry of the same
+    // checkout is recognised even across server instances. Dropped first if
+    // the column isn't deployed — a duplicate order beats a failed sale.
+    const withKey   = idempotencyKey ? { ...basePayload, idempotency_key: idempotencyKey } : basePayload;
+    const withNotes = { ...withKey, notes };
+    // Fee columns ship in migration_v4_2 — dropped first if absent, since a
+    // recorded fee matters less than the sale itself.
+    const withFee = fee.totalFee > 0
+      ? { ...withNotes, platform_fee: fee.buyerFee, fee_paid_by_store: fee.storeFee }
+      : withNotes;
     const attempts: Record<string, unknown>[] = [
-      { ...withNotes, supplier_id: supplierId, cashier_name: cashierName, session_id: sessionId },
-      { ...withNotes, supplier_id: supplierId, cashier_name: cashierName },  // drop session_id (offline/FK)
+      { ...withFee,   supplier_id: supplierId, cashier_name: cashierName, session_id: sessionId },
+      { ...withFee,   supplier_id: supplierId, cashier_name: cashierName },  // drop session_id (offline/FK)
+      { ...withNotes, supplier_id: supplierId, cashier_name: cashierName },  // drop fee cols (pre-v4.2)
       { ...withNotes, supplier_id: supplierId },                            // drop cashier_name
       withNotes,                                                            // drop supplier_id (pre-v3.7)
+      { ...basePayload, notes },                                            // drop idempotency_key
       basePayload,                                                          // drop notes (oldest schema)
     ];
 
@@ -396,19 +671,30 @@ export async function POST(req: Request) {
       if (!error) { order = data as Record<string, unknown>; break; }
       lastErr = error;
     }
-    if (!order) throw lastErr ?? new Error('Order insert failed');
-
-    // 4. Decrement stock (sales only) — best-effort on legacy schema
-    if (!isBulk) {
-      for (const item of items) {
-        const p = byId.get(item.id)!;
-        await sb.from('products')
-          .update({
-            stock: Math.max((p.stock as number) - item.qty, 0),
-            sold:  ((p.sold as number) ?? 0) + item.qty,
-          })
-          .eq('id', item.id);
+    if (!order) {
+      // Never strand the stock we just took for an order that doesn't exist.
+      for (const t of taken) {
+        try { await sb.rpc('restore_stock', { p_id: t.id, p_qty: t.qty }); } catch { /* best effort */ }
       }
+      throw lastErr ?? new Error('Order insert failed');
+    }
+
+    // 5. Write the normalized sales lines. place_order() has always done this,
+    //    but this fallback never did — so bulk / tiered / staff-discount sales
+    //    produced no order_items at all, and every per-seller revenue report
+    //    built on that table silently undercounted them.
+    if (pricedItems.length) {
+      const lines = pricedItems.map(pi => ({
+        order_id:    order!.id,
+        product_id:  pi.id,
+        supplier_id: (byId.get(pi.id)?.supplier_id as number | undefined) ?? supplierId ?? null,
+        qty:         pi.qty,
+        unit_price:  pi.price,
+        line_total:  Math.round(pi.price * pi.qty * 100) / 100,
+      }));
+      // Reporting data — never fail a paid order because the ledger insert did.
+      const { error: liErr } = await sb.from('order_items').insert(lines);
+      if (liErr) console.error('[orders POST] order_items insert failed:', errMsg(liErr));
     }
 
     notifyNewOrder(String(order!.id), userId, items, total);

@@ -2,7 +2,7 @@
  * Store-link (slug) rules — single source of truth.
  *
  * A store's public URL is `<domain>/<slug>` (today: localhost:3001/city-care,
- * in production: mogarenta.com/city-care — same code, the origin is read at
+ * in production: hamarmall.com/city-care — same code, the origin is read at
  * runtime). The Shell treats any single non-reserved path segment as a
  * storefront, so a slug must never collide with a real app route.
  */

@@ -45,19 +45,45 @@ const fetchWithTimeout: typeof fetch = (input, init) => {
 };
 
 /**
+ * True while we've deliberately paused GoTrue's token auto-refresh after a
+ * network failure. Tracked so we can turn it back ON — the pause used to be
+ * lifted only by a window 'online' event, which never fires for a failure that
+ * isn't a real offline transition (a dead dev server, a blocked request, a DNS
+ * blip). Auto-refresh then stayed off for the rest of the session and sessions
+ * silently stopped renewing until the user reloaded the page.
+ */
+let _refreshPaused = false;
+
+function pauseRefresh() {
+  if (_refreshPaused) return;
+  _refreshPaused = true;
+  try { _supabase?.auth.stopAutoRefresh(); } catch { /* noop */ }
+}
+
+function resumeRefresh() {
+  if (!_refreshPaused) return;
+  _refreshPaused = false;
+  try { _supabase?.auth.startAutoRefresh(); } catch { /* noop */ }
+}
+
+/**
  * Browser fetch for Supabase. On a network failure (offline, connection
  * changed, DNS hiccup) hitting an /auth/ endpoint, pause GoTrue's token
  * auto-refresh — otherwise its periodic timer + every tab-focus keep retrying
  * and flood the console with identical "Failed to fetch" errors during a blip.
- * It resumes on the next browser 'online' event (see hookConnectivity).
+ *
+ * Any auth request that COMPLETES resumes it: a round-trip is proof the
+ * connection is back, whatever the HTTP status (a 400 "invalid credentials"
+ * still means the network is fine).
  */
 const browserFetch: typeof fetch = async (input, init) => {
+  const isAuth = reqUrl(input).includes('/auth/v1/');
   try {
-    return await fetchWithTimeout(input, init);
+    const res = await fetchWithTimeout(input, init);
+    if (isAuth) resumeRefresh();
+    return res;
   } catch (err) {
-    if (reqUrl(input).includes('/auth/v1/')) {
-      try { _supabase?.auth.stopAutoRefresh(); } catch { /* noop */ }
-    }
+    if (isAuth) pauseRefresh();
     throw err;
   }
 };
@@ -67,8 +93,8 @@ function hookConnectivity() {
   if (_connectivityHooked || typeof window === 'undefined') return;
   _connectivityHooked = true;
   // Connection lost → stop the refresh storm; restored → resume normally.
-  window.addEventListener('offline', () => { try { _supabase?.auth.stopAutoRefresh(); } catch { /* noop */ } });
-  window.addEventListener('online',  () => { try { _supabase?.auth.startAutoRefresh(); } catch { /* noop */ } });
+  window.addEventListener('offline', pauseRefresh);
+  window.addEventListener('online',  resumeRefresh);
 }
 
 function resetIfUrlChanged() {

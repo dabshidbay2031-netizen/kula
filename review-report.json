@@ -1,0 +1,236 @@
+[
+  {
+    "route": "home",
+    "path": "/",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart District All Mogadishu All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚 Books 📦 Other 🏆 Best Sellers qalimo $1.00 HP Laptop - Xirmo Cusub $320.00 qalimo $1.00 🛒 All Products 3 items -98% qalimo 🏪 Sokow Sambusa ★ 0 (0) $1.00 $50.00 VAT incl.",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\home.png"
+  },
+  {
+    "route": "explore",
+    "path": "/#/explore",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔍 Business not found Go Back Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms of Use © 2026 Hamar Mall. All rights reserved. Pa",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\explore.png"
+  },
+  {
+    "route": "search",
+    "path": "/#/search",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚 Books 📦 Other HP Laptop - Xirmo Cusub 🏪 the business ★ 0 (0) $320.00 +5% VAT + Add to Cart -98% qalimo 🏪 Sokow Sambusa ★ 0 (0) $1.00 $50.00 VAT incl. + Add to Cart -98% qalimo 🏪 polo ★ 0 (0)",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\search.png"
+  },
+  {
+    "route": "wishlist",
+    "path": "/#/wishlist",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ❤️ Wishlist 0 items 🤍 Your wishlist is empty Tap the heart on any product to save it here. Browse products Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns &",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\wishlist.png"
+  },
+  {
+    "route": "orders",
+    "path": "/#/orders",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 📋 Sign in to view orders Your order history will appear here Sign In Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms of Use ©",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\orders.png"
+  },
+  {
+    "route": "pos",
+    "path": "/#/pos",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔒 Business area Sign in with a business account to manage your store Sign In Cart (0 items) ✕ 🛒 Cart is empty Add products to get started",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\pos.png"
+  },
+  {
+    "route": "suppliers",
+    "path": "/#/suppliers",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔒 Business area Sign in with a business account to manage your store Sign In Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms o",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\suppliers.png"
+  },
+  {
+    "route": "dashboard",
+    "path": "/#/dashboard",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔒 Business area Sign in with a business account to manage your store Sign In Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms o",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\dashboard.png"
+  },
+  {
+    "route": "inventory",
+    "path": "/#/inventory",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔒 Business area Sign in with a business account to manage your store Sign In Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms o",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\inventory.png"
+  },
+  {
+    "route": "customers",
+    "path": "/#/customers",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔒 Business area Sign in with a business account to manage your store Sign In Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms o",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\customers.png"
+  },
+  {
+    "route": "billing",
+    "path": "/#/billing",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ← Back 🧾 No subscription needed Sign in with a business or supplier account to manage billing. Sign in → Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Re",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\billing.png"
+  },
+  {
+    "route": "settings",
+    "path": "/#/settings",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ⚙️ Settings Changes are saved automatically 👤 ACCOUNT Not signed in Sign in to sync orders, chat and wishlist Sign In 🎨 APPEARANCE Theme Light or dark mode ☀️ Light 🌙 Dark Currency All prices are in US Dollars $ USD Language Interface language English 🔔 NOTIFICATIONS Push Notifications Order updates & chat messages, even whe",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\settings.png"
+  },
+  {
+    "route": "notifications",
+    "path": "/#/notifications",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔔 Notifications 0 unread 🔔 No notifications You're all caught up! Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms of Use ©",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\notifications.png"
+  },
+  {
+    "route": "chat",
+    "path": "/#/chat",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 💬 Sign in to chat You need an account to send messages Sign In Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms of Use © 2026 H",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\chat.png"
+  },
+  {
+    "route": "checkout",
+    "path": "/#/checkout",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [
+      "GET http://localhost:3000/api/notifications :: net::ERR_ABORTED",
+      "GET http://localhost:3000/api/products :: net::ERR_ABORTED",
+      "GET http://localhost:3000/api/suppliers :: net::ERR_ABORTED"
+    ],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart Nothing to check out This shop has no items in your cart Browse Products Cart (0 items) ✕ 🛒 Cart is empty Add products to get started",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\checkout.png"
+  },
+  {
+    "route": "privacy",
+    "path": "/#/privacy",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ← Back LEGAL Privacy Policy What Hamar Mall collects, how we use it, and the choices you have. Last updated: July 2026 1. What we collect Account details (name, email, phone), profile and store information, orders and transaction history, messages you send, optional delivery location (GPS) you choose to share, and basic devi",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\privacy.png"
+  },
+  {
+    "route": "terms",
+    "path": "/#/terms",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ← Back LEGAL Terms of Use & Agreement The terms for using Hamar Mall — accounts, seller subscriptions, orders, and more. Last updated: July 2026 1. Acceptance By creating an account or using Hamar Mall (the “Service”) you agree to these Terms of Use. If you do not agree, do not use the Service. If you use the Service on beha",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\terms.png"
+  },
+  {
+    "route": "about",
+    "path": "/#/about",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ← Back HAMAR MALL About Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. Who we are Hamar Mall is an online marketplace for Somalia, connecting shoppers with local shops, pharmacies, wholesalers and suppliers — from electronics and clothing to medicine",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\about.png"
+  },
+  {
+    "route": "contact",
+    "path": "/#/contact",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ← Back SUPPORT Contact us We're here to help — whether you're a shopper with a question about an order or a business wanting to sell on Hamar Mall. Email support@hamarmall.com We aim to reply within one business day. In the app Signed in? Message a store directly from its page, or open the Chat tab to continue a conversatio",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\contact.png"
+  },
+  {
+    "route": "login",
+    "path": "/#/auth/login",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🏪 Hamar Mall Business Portal Welcome back Sign in to your account ✉️ Email 🌐 Google Email Address Password 👁️ Forgot password? Sign In → New here? Create an account Staff member? Log in here ← Back to shop Cart (0 items) ✕ 🛒 Cart is empty Add products to get started",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\login.png"
+  },
+  {
+    "route": "signup",
+    "path": "/#/auth/signup",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🏪 Hamar Mall Create your account How would you like to sign up? Choose your preferred method ✉️ Email & Password Sign up with your email address Continue with Google Quick one-tap sign up Already have an account? Sign in ← Back to shop Cart (0 items) ✕ 🛒 Cart is empty Add products to get started",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\signup.png"
+  },
+  {
+    "route": "admin",
+    "path": "/#/admin",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔒 Admin Access You need to be logged in to access this page. Sign In Cart (0 items) ✕ 🛒 Cart is empty Add products to get started",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\admin.png"
+  },
+  {
+    "route": "profile",
+    "path": "/#/profile",
+    "status": "ok",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "failedReqs": [],
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart 🔐 Sign in required Log in to access your profile Sign InCreate Account Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Explore Search My Orders Wishlist SELL Sell on Hamar Mall COMPANY About Us Contact Returns & Refunds Privacy Policy Terms of Use",
+    "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\profile.png"
+  }
+]

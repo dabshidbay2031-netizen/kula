@@ -55,8 +55,10 @@ function mapSupplier(s: Record<string, unknown>) {
        client the columns EXIST, so "not paid" can't be confused with
        "migration_subscriptions.sql hasn't run" (which must never lock a seller). */
     billingEnabled:         'subscription_paid_at' in s,
+    monthlyBillingEnabled:  'subscription_period_end' in s,
     subscriptionPaidAt:     (s.subscription_paid_at as string | undefined) ?? null,
     subscriptionRefundedAt: (s.subscription_refunded_at as string | undefined) ?? null,
+    subscriptionPeriodEnd:  (s.subscription_period_end as string | undefined) ?? null,
     subscriptionPlan:       (s.subscription_plan as string | undefined) ?? null,
     subscriptionAmount:     s.subscription_amount != null ? Number(s.subscription_amount) : null,
     /* Field-agent onboarding (migration_v3_9) — absent columns map to null.

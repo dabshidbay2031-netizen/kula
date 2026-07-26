@@ -9,6 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useMyProductIds, type ClaimRecord } from '@/lib/useMyProductIds';
 import { authHeaders } from '@/lib/clientAuth';
 import ProductFormModal, { type ProductFormShape, emptyProductForm } from '@/components/ProductFormModal';
+import { tiersToForm, formToTiers } from '@/lib/tierPricing';
 
 const BarcodeScanner = dynamic(() => import('@/components/BarcodeScanner'), { ssr: false });
 
@@ -100,6 +101,8 @@ export default function InventoryPage() {
       barcode: p.barcode ?? '',
       imageUrls: photos,
       taxMode: (p as typeof p & { taxMode?: 'none' | 'included' | 'excluded' }).taxMode ?? 'none',
+      feeAbsorbedByStore: Boolean((p as typeof p & { feeAbsorbedByStore?: boolean }).feeAbsorbedByStore),
+      priceTiers: tiersToForm(p.priceTiers),
     });
     setShowForm(true);
   };
@@ -133,6 +136,8 @@ export default function InventoryPage() {
             barcode: code,
             imageUrls: p.imageUrls?.length ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []),
             taxMode: (p.taxMode as 'none' | 'included' | 'excluded') ?? 'none',
+            feeAbsorbedByStore: Boolean(p.feeAbsorbedByStore),
+            priceTiers: tiersToForm(p.priceTiers),
           });
           setShowForm(true);
         } else {
@@ -216,6 +221,8 @@ export default function InventoryPage() {
       imageUrl: form.imageUrls[0] ?? null,
       imageUrls: form.imageUrls,
       taxMode: form.taxMode,
+      feeAbsorbedByStore: form.feeAbsorbedByStore,
+      priceTiers: formToTiers(form.priceTiers),
     };
     const url    = editingId ? `/api/products/${editingId}` : '/api/products';
     const method = editingId ? 'PATCH' : 'POST';

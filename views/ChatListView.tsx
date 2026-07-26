@@ -6,6 +6,7 @@ import Header from '@/components/Header';
 import { useAuth } from '@/context/AuthContext';
 import { useStoreActor } from '@/lib/useStoreActor';
 import { useRealtimePing } from '@/lib/useRealtimePing';
+import { authHeaders } from '@/lib/clientAuth';
 import StoreAvatar from '@/components/StoreAvatar';
 import type { ChatUser, Message } from '@/lib/types';
 
@@ -55,21 +56,19 @@ export default function ChatListPage() {
     if (!chatUserId || staffBlocked) { setConvLoading(false); return; }
     setConvLoading(true);
     try {
-      const res  = await fetch(`/api/conversations?userId=${chatUserId}`);
+      // The inbox is private — the API needs the caller's credentials. Staff
+      // send a cashier token; both are attached by ApiAuthInstaller, but pass
+      // them explicitly so this doesn't depend on the global fetch patch.
+      const res  = await fetch(`/api/conversations?userId=${chatUserId}`, {
+        headers: await authHeaders(),
+      });
+      if (!res.ok) { setConvs([]); setConvLoading(false); return; }
       const data = await res.json();
       if (!Array.isArray(data)) { setConvs([]); setConvLoading(false); return; }
 
-      // Resolve other user profiles
-      const enriched = await Promise.all(
-        data.map(async (c: ConvItem) => {
-          try {
-            const r = await fetch(`/api/conversations/${c.id}?viewerId=${chatUserId}`);
-            const d = await r.json();
-            return { ...c, otherUser: d.otherUser };
-          } catch { return c; }
-        })
-      );
-      setConvs(enriched);
+      // The counterpart profile now rides along in this one response. Fetching
+      // it per conversation turned a 100-thread inbox into 300+ requests.
+      setConvs(data as ConvItem[]);
     } catch {
       setConvs([]);
     }

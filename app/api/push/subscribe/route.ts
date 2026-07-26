@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getAuthUser } from '@/lib/apiAuth';
+import { isMissingTableError } from '@/lib/apiHelpers';
 
 /**
  * POST   /api/push/subscribe — save the caller's browser push subscription.
@@ -35,10 +36,15 @@ export async function POST(req: Request) {
     if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json(
-      { error: 'Save failed — has migration_v3_5.sql been run?', detail: String(e) },
-      { status: 500 },
-    );
+    // The table not existing is a setup step, not a runtime fault — flag it so
+    // the UI can say exactly what to do instead of "try again later".
+    if (isMissingTableError(e)) {
+      return NextResponse.json(
+        { error: 'push_subscriptions table missing — run supabase/migration_v3_5.sql', needsMigration: true },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({ error: 'Could not save the subscription', detail: String(e) }, { status: 500 });
   }
 }
 

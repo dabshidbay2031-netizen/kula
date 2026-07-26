@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useParams } from '@/lib/hashRouter';
 import dynamic from 'next/dynamic';
 import Header from '@/components/Header';
@@ -10,6 +10,7 @@ import { useApp } from '@/context/AppContext';
 import { useAuth } from '@/context/AuthContext';
 import { MOGADISHU_DISTRICTS } from '@/lib/data';
 import { readReceiptAutoPrintSetting } from '@/lib/receiptSettings';
+import { computePlatformFee, PLATFORM_FEE_LABEL } from '@/lib/fees';
 import type { SifaloGateway } from '@/lib/types';
 
 /** Sifalo wallet options shown in checkout → mapped to a Sifalo gateway id. */
@@ -27,6 +28,13 @@ export default function CheckoutPage() {
   const { state, setPaymentMethod, setPaymentState, removeFromCart, reloadProducts, toast } = useApp();
   const { user } = useAuth();
   const { cart, products, suppliers, paymentMethod, paymentState } = state;
+
+  /** Stable for the life of this checkout screen — see placeOrderNow (M5). */
+  const checkoutKeyRef = useRef<string>(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `ck-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
 
   // This checkout is scoped to ONE shop. The cart can hold items from several
   // shops; we only place/charge the items belonging to the chosen shop.
@@ -107,7 +115,18 @@ export default function CheckoutPage() {
     return n + p.price * item.qty * 0.05;
   }, 0);
   const discountAmt = couponDiscount;
-  const total       = Math.max(0, subtotal + vatAmount - discountAmt);
+  // 3% platform fee — online payments only, and skipped per-product when the
+  // store opted to absorb it. Mirrors the server's computation in /api/orders,
+  // which is authoritative; this is what the buyer sees before confirming.
+  const feeBreakdown = computePlatformFee(
+    shopCart.map(item => {
+      const p = products.find(x => x.id === item.id);
+      return { price: p?.price ?? 0, qty: item.qty, feeAbsorbedByStore: p?.feeAbsorbedByStore };
+    }),
+    payMethod,
+  );
+  const feeAmount   = feeBreakdown.buyerFee;
+  const total       = Math.max(0, subtotal + vatAmount + feeAmount - discountAmt);
 
   // Pre-fill name + phone from profile
   useEffect(() => {
@@ -185,6 +204,11 @@ export default function CheckoutPage() {
      For Sifalo this runs only AFTER a confirmed on-page charge (sifaloSid set);
      for Cash it records a pay-on-delivery order with no charge. ── */
   const placeOrderNow = async (sifaloSid: string | null) => {
+    // One key per checkout screen. A double-tapped button, or a retry after a
+    // network blip, replays the SAME key — the server then returns the order it
+    // already created instead of charging the customer twice. Disabling the
+    // button client-side never covered the blip-and-retry case.
+    const idempotencyKey = checkoutKeyRef.current;
     const contactPhone = payMethod === 'sifalo' ? `+252${sifaloAccount}` : `+252${phone}`;
     const notes = [deliveryNote(), sifaloSid ? `Sifalo SID: ${sifaloSid}` : null].filter(Boolean).join(' | ') || null;
 
@@ -195,7 +219,7 @@ export default function CheckoutPage() {
     try {
       const res = await fetch('/api/orders', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body:    JSON.stringify({
           customerName:  name,
           customerPhone: contactPhone,
@@ -497,6 +521,18 @@ export default function CheckoutPage() {
               <div className="summary-row">
                 <span>VAT (5%)</span>
                 <span>+${vatAmount.toFixed(2)}</span>
+              </div>
+            )}
+            {feeAmount > 0 && (
+              <div className="summary-row">
+                <span>{PLATFORM_FEE_LABEL}</span>
+                <span>+${feeAmount.toFixed(2)}</span>
+              </div>
+            )}
+            {feeBreakdown.storeFee > 0 && feeAmount === 0 && (
+              <div className="summary-row" style={{ color: 'var(--success, #059669)' }}>
+                <span>{PLATFORM_FEE_LABEL}</span>
+                <span>Paid by the store</span>
               </div>
             )}
             {discountAmt > 0 && (

@@ -24,6 +24,11 @@ export interface ProductFormShape {
   stock: string; sku: string; description: string;
   supplierId: string; barcode: string; imageUrls: string[];
   taxMode: 'none' | 'included' | 'excluded';
+  /** Store pays the 3% transaction fee instead of adding it to the buyer. */
+  feeAbsorbedByStore: boolean;
+  /** Wholesale bulk pricing. Kept as strings while editing so a half-typed
+   *  number doesn't get coerced to 0 under the seller's cursor. */
+  priceTiers: { minQty: string; maxQty: string; price: string }[];
 }
 
 export const emptyProductForm: ProductFormShape = {
@@ -31,6 +36,8 @@ export const emptyProductForm: ProductFormShape = {
   subCategory: '', brand: '', tags: '',
   stock: '0', sku: '', description: '', supplierId: '', barcode: '', imageUrls: [],
   taxMode: 'none',
+  feeAbsorbedByStore: false,
+  priceTiers: [],
 };
 
 interface Props {
@@ -55,6 +62,13 @@ export default function ProductFormModal({
 }: Props) {
   const [scanOpen, setScanOpen] = useState(false);
   const pf = (k: keyof ProductFormShape, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  /** Edit one field of one bulk-pricing tier. */
+  const setTier = (i: number, k: 'minQty' | 'maxQty' | 'price', v: string) =>
+    setForm(f => ({
+      ...f,
+      priceTiers: f.priceTiers.map((t, j) => (j === i ? { ...t, [k]: v } : t)),
+    }));
 
   // Live margin readout as the owner types price & cost.
   const formMargin = useMemo(() => {
@@ -225,6 +239,93 @@ export default function ProductFormModal({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Who pays the 3% platform fee on online-paid orders */}
+              <div className="form-group">
+                <label className="form-label">Transaction fee (3%)</label>
+                <button
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, feeAbsorbedByStore: !f.feeAbsorbedByStore }))}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                    border: `2px solid ${form.feeAbsorbedByStore ? 'var(--primary)' : 'var(--border)'}`,
+                    background: form.feeAbsorbedByStore ? 'var(--primary-soft, rgba(99,102,241,.1))' : 'var(--surface)',
+                    transition: 'border-color .15s, background .15s',
+                  }}
+                >
+                  <span style={{
+                    width: 20, height: 20, flexShrink: 0, borderRadius: 6, display: 'grid', placeItems: 'center',
+                    border: `2px solid ${form.feeAbsorbedByStore ? 'var(--primary)' : 'var(--border)'}`,
+                    background: form.feeAbsorbedByStore ? 'var(--primary)' : 'transparent',
+                    color: '#fff', fontSize: '.7rem', fontWeight: 800,
+                  }}>{form.feeAbsorbedByStore ? '✓' : ''}</span>
+                  <span>
+                    <span style={{ display: 'block', fontWeight: 600, fontSize: '.84rem' }}>
+                      Transaction fee on us
+                    </span>
+                    <span style={{ display: 'block', fontSize: '.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                      {form.feeAbsorbedByStore
+                        ? 'You pay the 3% — the buyer pays exactly your listed price.'
+                        : 'The buyer pays 3% on top at checkout (online payments only).'}
+                    </span>
+                  </span>
+                </button>
+              </div>
+
+              {/* Wholesale bulk pricing — cheaper per unit at higher quantities */}
+              <div className="form-group">
+                <label className="form-label">Bulk pricing (optional)</label>
+                <div style={{ fontSize: '.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                  Cheaper per-unit price at higher quantities. Leave “To” empty for “and above”.
+                </div>
+
+                {form.priceTiers.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 32px', gap: 6, fontSize: '.66rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                      <span>From qty</span><span>To qty</span><span>Unit price</span><span />
+                    </div>
+                    {form.priceTiers.map((t, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 32px', gap: 6, alignItems: 'center' }}>
+                        <input
+                          className="form-input" type="number" min="1" placeholder="100"
+                          value={t.minQty}
+                          onChange={e => setTier(i, 'minQty', e.target.value)}
+                          style={{ padding: '6px 8px', fontSize: '.82rem' }}
+                        />
+                        <input
+                          className="form-input" type="number" min="1" placeholder="∞"
+                          value={t.maxQty}
+                          onChange={e => setTier(i, 'maxQty', e.target.value)}
+                          style={{ padding: '6px 8px', fontSize: '.82rem' }}
+                        />
+                        <input
+                          className="form-input" type="number" min="0" step="0.01" placeholder="1.70"
+                          value={t.price}
+                          onChange={e => setTier(i, 'price', e.target.value)}
+                          style={{ padding: '6px 8px', fontSize: '.82rem' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, priceTiers: f.priceTiers.filter((_, j) => j !== i) }))}
+                          title="Remove this tier"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: 'var(--danger)' }}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setForm(f => ({
+                    ...f,
+                    // Start the next tier where the previous one left off.
+                    priceTiers: [...f.priceTiers, { minQty: '', maxQty: '', price: '' }],
+                  }))}
+                >+ Add tier</button>
               </div>
 
               {/* Barcode field + camera scan */}

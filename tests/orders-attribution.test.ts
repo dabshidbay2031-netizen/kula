@@ -22,7 +22,7 @@ function builder(table: string) {
   let supplierFilter: number | null = null;
   b.select = () => b;
   b.eq = (col: string, val: unknown) => { if (col === 'supplier_id') supplierFilter = Number(val); return b; };
-  for (const m of ['in', 'order', 'limit', 'neq', 'is'] as const) b[m] = () => b;
+  for (const m of ['in', 'order', 'limit', 'neq', 'is', 'range', 'gte', 'lt'] as const) b[m] = () => b;
   b.maybeSingle = () => {
     if (table === 'admins')    return Promise.resolve({ data: adminRow ? { user_id: authedUser?.id } : null, error: null });
     if (table === 'suppliers') return Promise.resolve({ data: storeOwner ? { auth_user_id: storeOwner } : null, error: null });

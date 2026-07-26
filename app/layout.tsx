@@ -25,6 +25,7 @@ import { CashierProvider }    from '@/context/CashierContext';
 import { HashRouterProvider } from '@/lib/hashRouter';
 import BottomNav         from '@/components/BottomNav';
 import Sidebar           from '@/components/Sidebar';
+import Footer            from '@/components/Footer';
 import CartDrawer        from '@/components/CartDrawer';
 import ToastContainer    from '@/components/Toast';
 import InstallPrompt     from '@/components/InstallPrompt';
@@ -77,6 +78,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Sidebar />
               <div id="app">
                 {children}
+                {/* Inside #app so it sits after the page content and inherits
+                    the desktop sidebar offset. */}
+                <Footer />
               </div>
               <BottomNav />
               <CartDrawer />

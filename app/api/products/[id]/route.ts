@@ -34,6 +34,8 @@ function mapProduct(p: Record<string, unknown>) {
     isB2b:         Boolean(p.is_b2b ?? false),
     moq:           (p.moq as number) ?? 1,
     taxMode:       (p.tax_mode as 'none' | 'included' | 'excluded') ?? 'none',
+    copiedFromProductId: (p.copied_from_product_id as number | undefined) ?? null,
+    feeAbsorbedByStore:  Boolean(p.fee_absorbed_by_store ?? false),
   };
 }
 
@@ -75,6 +77,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.isB2b         !== undefined) updates.is_b2b        = Boolean(body.isB2b);
   if (body.moq           !== undefined) updates.moq           = parseInt(String(body.moq), 10);
   if (body.taxMode       !== undefined) updates.tax_mode      = (['none','included','excluded'] as const).includes(body.taxMode) ? body.taxMode : 'none';
+  if (body.feeAbsorbedByStore !== undefined) updates.fee_absorbed_by_store = Boolean(body.feeAbsorbedByStore);
 
   let { data, error } = await getSupabaseAdmin()
     .from('products').update(updates).eq('id', id).select().single();

@@ -36,6 +36,7 @@ export default function TrialGate({ children }: { children: ReactNode }) {
   }
 
   const refunded = sub.status === 'refunded';
+  const expired  = sub.status === 'expired';
 
   return (
     <div className="page-anim" style={{
@@ -44,17 +45,21 @@ export default function TrialGate({ children }: { children: ReactNode }) {
     }}>
       <div style={{ fontSize: '2.6rem' }}>🔒</div>
       <div style={{ fontWeight: 800, fontSize: '1.3rem' }}>
-        {refunded ? 'Subscription cancelled' : 'Activate your store'}
+        {refunded ? 'Subscription cancelled' : expired ? 'Monthly subscription expired' : 'Activate your store'}
       </div>
       <div style={{ color: 'var(--text-muted)', maxWidth: 420, lineHeight: 1.6 }}>
         {refunded
           ? 'Your subscription was refunded, so the dashboard is locked. Pay the '
-          : 'Your store dashboard is locked until you start your subscription. Pay the '}
+          : expired
+            ? 'Your paid month has ended, so the dashboard is locked. Renew the '
+            : 'Your store dashboard is locked until you start your subscription. Pay the '}
         <strong>{planLabel(sub.plan)}</strong> fee of <strong>${sub.price?.toFixed(2)}</strong>
-        {' '}to unlock it — with a full {SUBSCRIPTION_TRIAL_DAYS}-day money-back guarantee.
+        {expired
+          ? ' to reopen it for another month.'
+          : <> to unlock it — with a full {SUBSCRIPTION_TRIAL_DAYS}-day money-back guarantee.</>}
       </div>
       <Link href="/billing" className="btn btn-primary btn-lg" style={{ marginTop: 6 }}>
-        {refunded ? 'Reactivate for' : 'Pay'} ${sub.price?.toFixed(2)} →
+        {refunded ? 'Reactivate for' : expired ? 'Renew for' : 'Pay'} ${sub.price?.toFixed(2)} →
       </Link>
       <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '.85rem' }}>← Back to shop</Link>
     </div>

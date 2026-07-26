@@ -12,6 +12,7 @@ import ProductImage from '@/components/ProductImage';
 import { reliableImageSrc } from '@/lib/imageFallback';
 import { useClaimProduct } from '@/lib/useClaimProduct';
 import { similarProducts } from '@/lib/similarity';
+import { normalizeTiers, tierForQty, unitPriceFor, tierSavingPerUnit, tierRangeLabel } from '@/lib/tierPricing';
 import { recordInterest } from '@/lib/affinity';
 
 interface Review {
@@ -155,6 +156,14 @@ export default function ProductDetailPage() {
   const isOwnProduct = currentSupplier != null && product.supplierId === currentSupplier.id;
   const isWishlisted = state.wishlist.includes(product.id);
   const supplier     = suppliers.find(s => s.id === product.supplierId);
+
+  /* Wholesale bulk pricing — the unit price depends on the quantity chosen,
+     so these recompute as the buyer changes it. The server re-derives the same
+     price at checkout (see /api/orders); this is what the buyer is shown. */
+  const tiers        = normalizeTiers(product.priceTiers);
+  const activeTier   = tierForQty(tiers, qty);
+  const tierUnitPrice = unitPriceFor(product.price, tiers, qty);
+  const tierSaving   = tierSavingPerUnit(product.price, tiers, qty);
   // Ranked by shared tags > shared name words > subcategory > brand > category.
   // Shows as many genuinely-related items as possible (same category + shared
   // tags rank highest), capped generously for the "You may also like" shelf.
@@ -318,8 +327,12 @@ export default function ProductDetailPage() {
         </div>
 
         <div className="detail-price-row">
-          <span className="detail-price">${product.price.toFixed(2)}</span>
-          {product.originalPrice > product.price && (
+          {/* With bulk tiers the headline price follows the chosen quantity, so
+              the buyer sees the rate they'll actually pay before adding. */}
+          <span className="detail-price">${tierUnitPrice.toFixed(2)}</span>
+          {tierUnitPrice < product.price ? (
+            <span className="detail-orig">${product.price.toFixed(2)}</span>
+          ) : product.originalPrice > product.price && (
             <span className="detail-orig">${product.originalPrice.toFixed(2)}</span>
           )}
           {pct > 0 && <span className="detail-discount-badge">-{pct}%</span>}
@@ -330,6 +343,39 @@ export default function ProductDetailPage() {
             <span className="tax-badge tax-excluded">+5% VAT at checkout</span>
           )}
         </div>
+
+        {/* Wholesale bulk pricing — buy more, pay less per unit */}
+        {tiers.length > 0 && (
+          <div style={{ margin: '10px 0 4px', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '8px 12px', background: 'var(--surface)', fontWeight: 700, fontSize: '.82rem' }}>
+              📦 Bulk pricing
+            </div>
+            {tiers.map((t, i) => {
+              const active = activeTier != null && t.minQty === activeTier.minQty && t.price === activeTier.price;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '7px 12px', fontSize: '.83rem',
+                    borderTop: '1px solid var(--border-light, #f1f5f9)',
+                    background: active ? 'var(--primary-soft, rgba(99,102,241,.1))' : 'transparent',
+                    fontWeight: active ? 700 : 400,
+                    color: active ? 'var(--primary)' : 'inherit',
+                  }}
+                >
+                  <span>{tierRangeLabel(t)} pcs</span>
+                  <span>${t.price.toFixed(2)} each{active ? ' ← your price' : ''}</span>
+                </div>
+              );
+            })}
+            {tierSaving > 0 && (
+              <div style={{ padding: '7px 12px', fontSize: '.78rem', fontWeight: 700, color: '#059669', borderTop: '1px solid var(--border-light, #f1f5f9)' }}>
+                You save ${(tierSaving * qty).toFixed(2)} on {qty} pcs
+              </div>
+            )}
+          </div>
+        )}
 
         <p className="detail-desc">{product.description}</p>
 

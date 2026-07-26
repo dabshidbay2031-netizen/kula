@@ -7,6 +7,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useStoreActor } from '@/lib/useStoreActor';
 import { authHeaders } from '@/lib/clientAuth';
 import { useMyProductIds } from '@/lib/useMyProductIds';
+import Pagination from '@/components/Pagination';
+import { usePagination } from '@/lib/usePagination';
 import type { Customer } from '@/lib/types';
 
 /* ─── constants ──────────────────────────────────── */
@@ -459,6 +461,10 @@ export default function CustomersPage() {
     );
   }, [customers, search]);
 
+  // A shop's customer book grows without bound; page it. Searching re-pages
+  // from the start so results are never hidden behind a stale page number.
+  const custPager = usePagination(filtered, 20, search);
+
   const ledgerInvoices = useMemo(
     () => (ledgerCust ? invoices.filter(v => v.customerId === ledgerCust.id) : []),
     [invoices, ledgerCust]
@@ -527,7 +533,7 @@ export default function CustomersPage() {
             <div className="empty-sub">Try a different name or number</div>
           </div>
         ) : (
-          filtered.map(c => {
+          custPager.visible.map(c => {
             const ledger = ledgerByCustomer.get(c.id);
             return (
             <div key={c.id} className="cust-card">
@@ -585,6 +591,10 @@ export default function CustomersPage() {
             );
           })
         )}
+        <Pagination
+          page={custPager.page} totalPages={custPager.totalPages} onPage={custPager.setPage}
+          from={custPager.from} to={custPager.to} total={custPager.total} label="customers"
+        />
       </div>
 
       {/* ── Add / Edit Modal ─────────────────────────── */}

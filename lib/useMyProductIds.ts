@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
 import { useCashier } from '@/context/CashierContext';
+import { authHeaders } from '@/lib/clientAuth';
 import type { ClaimRow, OverridableField } from '@/lib/listings';
 
 /** A claimed product's business-specific record — what THIS store, not the
@@ -74,9 +75,12 @@ export function useMyProductIds(): {
     if (supplierId == null) { setClaimed(new Map()); setReady(true); return; }
     let cancelled = false;
     setReady(false);
-    fetch(`/api/business-products?supplierId=${supplierId}`)
-      .then(r => r.json())
-      .then(bp => {
+    (async () => {
+      try {
+        const r = await fetch(`/api/business-products?supplierId=${supplierId}`, {
+          headers: await authHeaders(),
+        });
+        const bp = await r.json();
         if (cancelled) return;
         const map = new Map<number, ClaimRecord>();
         if (Array.isArray(bp)) {
@@ -90,9 +94,12 @@ export function useMyProductIds(): {
           }
         }
         setClaimed(map);
-      })
-      .catch(() => { if (!cancelled) setClaimed(new Map()); })
-      .finally(() => { if (!cancelled) setReady(true); });
+      } catch {
+        if (!cancelled) setClaimed(new Map());
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    })();
     return () => { cancelled = true; };
   }, [supplierId, refreshTick]);
 

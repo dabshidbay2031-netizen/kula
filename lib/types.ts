@@ -45,6 +45,9 @@ export interface Product {
    *  "Add to my store" flow) — this row is owned outright by the copying store.
    *  Null for an original. Ships in migration_v4_0.sql. */
   copiedFromProductId?: number | null;
+  /** The store pays the 3% platform fee for this product instead of the buyer
+   *  ("transaction fee on us"). Ships in migration_v4_2.sql. */
+  feeAbsorbedByStore?: boolean;
 }
 
 /** A product that a specific business has claimed from the global catalog */
@@ -98,8 +101,10 @@ export interface Supplier {
   agentBountyPaidAt?:   string | null;   // when the admin paid that bounty
   /* Subscription billing (absent on pre-migration schemas) */
   billingEnabled?:         boolean;   // false = billing columns not deployed yet
+  monthlyBillingEnabled?:  boolean;   // false = subscription_period_end not deployed yet
   subscriptionPaidAt?:     string | null;
   subscriptionRefundedAt?: string | null;
+  subscriptionPeriodEnd?:  string | null;   // end of the paid month
   subscriptionPlan?:       string | null;
   subscriptionAmount?:     number | null;
 }
@@ -107,6 +112,15 @@ export interface Supplier {
 export interface CartItem {
   id:  number;
   qty: number;
+  /**
+   * Unit price FROZEN at the moment of sale (server-written on the order's
+   * line items — tier-adjusted, never the client's number). Absent on the
+   * cart itself and on legacy orders placed before snapshotting existed.
+   * Reporting must prefer this over today's catalog price, or changing a
+   * price silently re-values past sales.
+   */
+  price?:     number;
+  unitPrice?: number;
 }
 
 export interface Order {
@@ -125,6 +139,11 @@ export interface Order {
    *  they distinguish an in-store sale from an online (web checkout) order. */
   sessionId?:    string | null;
   cashierName?:  string | null;
+  /** Platform fee charged ON TOP to the buyer (3%, online payments only). */
+  platformFee?:     number | null;
+  /** Platform fee the STORE absorbed ("fee on us") — deducted from its payout,
+   *  so any seller-facing revenue figure must subtract it to match the wallet. */
+  feePaidByStore?:  number | null;
   createdAt:     string;
 }
 
@@ -222,6 +241,9 @@ export interface Message {
   readAt:         string | null;
   createdAt:      string;
   senderInfo?:    ChatUser; // populated on GET
+  /** Client-only: the send failed and this is sitting in the outbox awaiting
+   *  a retry. Never returned by the API. */
+  failed?:        boolean;
 }
 
 export interface Customer {

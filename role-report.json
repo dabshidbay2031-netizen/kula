@@ -1,0 +1,300 @@
+[
+  {
+    "type": "user",
+    "label": "Customer",
+    "email": "cust_858370@mogarenta-test.com",
+    "name": "Test Customer",
+    "signup": {
+      "consoleErrors": [],
+      "pageErrors": []
+    },
+    "confirmationRequired": false,
+    "pages": [
+      {
+        "route": "/",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out District All Mogadishu All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/wishlist",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ❤️ Wishlist 0 items 🤍 Your wishlist is empty Tap the heart on any product to save it here. Browse products Hamar Mall Somalia's marketplace — shop from local",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/orders",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 📋 Orders ↻ Refresh 0 orders you placed 🛍️ No orders found Your purchases will appear here Start Shopping Hamar Mall Somalia's marketplace — shop from local",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/notifications",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔔 Notifications 0 unread 🔕 Push notifications are blocked. Tap the padlock (or ⓘ) next to the address bar → Notifications → Allow, then reload this page. 🔔",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/profile",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 👤 My Profile Sign Out Test Customer 0 Wishlist 0 In Cart 📋 Orders 🛍️ Shop Profile Photo Add Photos (0/1) Full Name Phone Number Bio / Description 0/300 Save",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/settings",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ⚙️ Settings Changes are saved automatically 👤 ACCOUNT Signed in as cust_858370@mogarenta-test.com 👤 Customer Profile Name, photo Open Sign Out Log out of th",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/search",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚 Books 📦 Other HP Lapto",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      }
+    ],
+    "gating": [
+      {
+        "route": "/#/dashboard",
+        "gated": true,
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is only available to business accounts Back to Shop Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Ex"
+      },
+      {
+        "route": "/#/inventory",
+        "gated": true,
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is only available to business accounts Back to Shop Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Ex"
+      },
+      {
+        "route": "/#/pos",
+        "gated": true,
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is only available to business accounts Back to Shop Cart (0 items) ✕ 🛒 Cart is empty Add products to get started"
+      },
+      {
+        "route": "/#/customers",
+        "gated": true,
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is only available to business accounts Back to Shop Hamar Mall Somalia's marketplace — shop from local stores, or run your own with a full point-of-sale and online storefront. SHOP Ex"
+      },
+      {
+        "route": "/#/admin",
+        "gated": true,
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ⛔ Access Denied Your account is not authorised to access the admin panel. Ask an existing admin to add you. Your User ID (give this to the admin): 30c1cab0-2415-4117-bcd1-2e9123aa812a ← Back to Store Cart (0 it"
+      }
+    ],
+    "login": {
+      "consoleErrors": [],
+      "pageErrors": []
+    }
+  },
+  {
+    "type": "business",
+    "label": "Business",
+    "email": "biz_858370@mogarenta-test.com",
+    "name": "Test Business Store",
+    "signup": {
+      "consoleErrors": [],
+      "pageErrors": []
+    },
+    "confirmationRequired": false,
+    "pages": [
+      {
+        "route": "/#/dashboard",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Activate your store Your store dashboard is locked until you start your subscription. Pay the Bus",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/inventory",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Activate your store Your store dashboard is locked until you start your subscription. Pay the Bus",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/orders",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Activate your store Your store dashboard is locked until you start your subscription. Pay the Bus",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/pos",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Activate your store Your store dashboard is locked until you start your subscription. Pay the Bus",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/profile",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🏭 Test Business Store Sign Out 0 Products 0.0 ⭐ Rating 0 Reviews 👁️ View Store 📦 Store 🎟️ Coupon",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/settings",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ⚙️ Settings Changes are saved automatically 👤 ACCOUNT Signed in as biz_858370@mogarenta-test.com",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/my-dashboard",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Activate your store Your store dashboard is locked until you start your subscription. Pay the Bus",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/billing",
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ← Back Store subscription Business plan · $14.99 / month · billed every 30 days · 7-day money-back",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      }
+    ],
+    "gating": [
+      {
+        "route": "/#/admin",
+        "gated": true,
+        "preview": "Hamar Mall Explore Dashboard Customers Staff Point of Sale Inventory Suppliers Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ⛔ Access Denied Your account is not authorised to access the admin panel. Ask an existing admin to add you. Your User ID (give this to the admin): 1b3"
+      }
+    ],
+    "login": {
+      "consoleErrors": [],
+      "pageErrors": []
+    }
+  },
+  {
+    "type": "supplier",
+    "label": "Supplier",
+    "email": "sup_858370@mogarenta-test.com",
+    "name": "Test Wholesale Co",
+    "signup": {
+      "consoleErrors": [],
+      "pageErrors": []
+    },
+    "confirmationRequired": false,
+    "pages": [
+      {
+        "route": "/#/dashboard",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is for store owners — manage your products from your supplier profile My Supplier Profile Hamar Mall Somalia's marketplace — shop fr",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/inventory",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is for store owners — manage your products from your supplier profile My Supplier Profile Hamar Mall Somalia's marketplace — shop fr",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/suppliers",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is for store owners — manage your products from your supplier profile My Supplier Profile Hamar Mall Somalia's marketplace — shop fr",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/orders",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Activate your store Your store dashboard is locked until you start your subscription. Pay the Supplier fee of $24.99 to unlock it — with a full 7-day money-b",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/profile",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🏭 Supplier Dashboard 💳 Billing Sign Out 🏭 Test Wholesale Co Supplier 0 Products 0 Orders 0.0 ⭐ Rating 0 Reviews 📦 Products 📊 Sales ⚙️ Settings My B2B Produ",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/billing",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ← Back Store subscription Supplier plan · $24.99 / month · billed every 30 days · 7-day money-back guarantee Status ● Payment required Plan Supplier Fee $24.9",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/my-dashboard",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is for store owners — manage your products from your supplier profile My Supplier Profile Hamar Mall Somalia's marketplace — shop fr",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      }
+    ],
+    "gating": [
+      {
+        "route": "/#/admin",
+        "gated": true,
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ⛔ Access Denied Your account is not authorised to access the admin panel. Ask an existing admin to add you. Your User ID (give this to the admin): 2b8b1cd0-9018-4867-a06b-a59ced4c47c6 ← Back to Store Cart (0 it"
+      }
+    ],
+    "login": {
+      "consoleErrors": [],
+      "pageErrors": []
+    }
+  },
+  {
+    "type": "agent",
+    "label": "Field Agent",
+    "email": "agent_858370@mogarenta-test.com",
+    "name": "Test Field Agent",
+    "signup": {
+      "consoleErrors": [],
+      "pageErrors": []
+    },
+    "confirmationRequired": false,
+    "pages": [
+      {
+        "route": "/#/my-dashboard",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is only available to business accounts Back to Shop Hamar Mall Somalia's marketplace — shop from local stores, or run your own with",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/profile",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 📋 Test Field Agent agent_858370@mogarenta-test.com Field Agent · Store Acquisition Sign Out 0 Registered 0 Approved $0.00 Paid $0.00 Owed ➕ Register a store Ha",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/settings",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ⚙️ Settings Changes are saved automatically 👤 ACCOUNT Signed in as agent_858370@mogarenta-test.com 📋 Agent Store Shown on receipts and your storefront Test",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      },
+      {
+        "route": "/#/suppliers",
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out 🔒 Business area This page is only available to business accounts Back to Shop Hamar Mall Somalia's marketplace — shop from local stores, or run your own with",
+        "consoleErrors": [],
+        "pageErrors": [],
+        "failedReqs": []
+      }
+    ],
+    "gating": [
+      {
+        "route": "/#/admin",
+        "gated": true,
+        "preview": "Hamar Mall Explore Chat Wishlist Alerts Orders Settings Profile AI Assistant Cart Log out ⛔ Access Denied Your account is not authorised to access the admin panel. Ask an existing admin to add you. Your User ID (give this to the admin): cf150259-3f64-4ebc-ba0f-1e4f87f1ca32 ← Back to Store Cart (0 it"
+      }
+    ],
+    "login": {
+      "consoleErrors": [],
+      "pageErrors": []
+    }
+  }
+]

@@ -1,26 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { errMsg, isMissingTableError } from '@/lib/apiHelpers';
-import { getAuthUser } from '@/lib/apiAuth';
 import { pingRealtime, runAfterResponse } from '@/lib/realtimeServer';
 import { sendPushToUsers } from '@/lib/pushNotify';
+import { rateLimit, clientIp } from '@/lib/rateLimit';
+import { requireChatMember, isBlockedEitherDirection } from '@/lib/chatAuth';
 
 /**
  * Authorize the caller as a participant of the conversation.
- * Returns the authenticated user id on success, or a Response to send back.
- * (Messages are private — only the two people in the thread may read/write.)
+ * Returns the chat identity's user id on success, or a Response to send back.
+ *
+ * Delegates to lib/chatAuth so STAFF with the 'chat' privilege are recognised.
+ * They hold no Supabase JWT, so the previous getAuthUser-only check 401'd every
+ * cashier — they could see the inbox list but never open a thread.
  */
 async function requireParticipant(req: Request, convId: string): Promise<string | Response> {
-  const user = await getAuthUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { data } = await getSupabaseAdmin()
-    .from('conversations').select('user_id_1, user_id_2').eq('id', convId).maybeSingle();
-  if (!data) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
-  const members = [String(data.user_id_1), String(data.user_id_2)];
-  if (!members.includes(user.id)) {
-    return NextResponse.json({ error: 'Forbidden — not a participant' }, { status: 403 });
-  }
-  return user.id;
+  const r = await requireChatMember(req, convId);
+  return r.ok ? r.identity.userId : r.res;
 }
 
 function mapMsg(m: Record<string, unknown>) {
@@ -87,11 +83,40 @@ export async function POST(
   if (auth instanceof Response) return auth;
   const senderId = auth; // authoritative: the sender IS the authenticated caller
 
+  // Rate limit: a logged-in user can send at most 30 messages / 10s from one
+  // IP. Stops spam/flood harassment (see lib/rateLimit.ts). Idempotent reads
+  // (GET) are not limited.
+  const rl = rateLimit(`chat-msg:${clientIp(req)}`, 30, 10_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: 'You are sending messages too fast. Please slow down.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    );
+  }
+
   const body = await req.json();
   const { content, imageUrl, messageType = 'text' } = body;
 
   if (!content && !imageUrl) {
     return NextResponse.json({ error: 'content or imageUrl required' }, { status: 400 });
+  }
+
+  // Block enforcement: if either party blocked the other, refuse the send.
+  // Resolve the other participant from the conversation row requireParticipant
+  // already validated against.
+  const { data: convRow } = await getSupabaseAdmin()
+    .from('conversations')
+    .select('user_id_1, user_id_2')
+    .eq('id', convId)
+    .maybeSingle();
+  const otherId = convRow
+    ? (String(convRow.user_id_1) === senderId ? String(convRow.user_id_2) : String(convRow.user_id_1))
+    : null;
+  if (otherId && (await isBlockedEitherDirection(senderId, otherId))) {
+    return NextResponse.json(
+      { error: "You can't message this user." },
+      { status: 403 },
+    );
   }
 
   try {
@@ -119,12 +144,9 @@ export async function POST(
     // instantly) + Web Push if their browser is subscribed. The open room
     // itself already streams the row via postgres_changes.
     runAfterResponse(async () => {
-      const { data: conv } = await getSupabaseAdmin()
-        .from('conversations').select('user_id_1, user_id_2').eq('id', convId).maybeSingle();
-      if (!conv) return;
-      const other = String(conv.user_id_1) === senderId ? String(conv.user_id_2) : String(conv.user_id_1);
-      pingRealtime([`user:${other}`]);
-      await sendPushToUsers([other], {
+      if (!otherId) return;
+      pingRealtime([`user:${otherId}`]);
+      await sendPushToUsers([otherId], {
         title: '💬 New message',
         body:  messageType === 'image' ? '📷 Photo' : String(content ?? '').slice(0, 120),
         url:   `/#/chat/${convId}`,
