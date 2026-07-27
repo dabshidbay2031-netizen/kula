@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Rubik, Nunito_Sans } from 'next/font/google';
 import './globals.css';
+import {
+  SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION, SITE_KEYWORDS, OG_IMAGE, siteJsonLd,
+} from '@/lib/siteMeta';
 
 const rubik = Rubik({
   subsets:  ['latin'],
@@ -40,9 +43,66 @@ import PushManager       from '@/components/PushManager';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Hamar Mall',
-  description: 'E-commerce & Point of Sale',
+  // Absolute base for canonicals, Open Graph images and the sitemap.
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default:  SITE_TITLE,
+    // Inner pages get "Something — Hamar Mall" without repeating the tagline.
+    template: `%s — ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  keywords: SITE_KEYWORDS,
+  applicationName: SITE_NAME,
   manifest: '/manifest.json',
+  alternates: { canonical: '/' },
+  category: 'shopping',
+  robots: {
+    index: true, follow: true,
+    googleBot: {
+      index: true, follow: true,
+      'max-image-preview': 'large',   // let Google show real product photos
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    locale: 'en_US',
+    alternateLocale: ['so_SO'],
+    images: [{ url: OG_IMAGE, width: 512, height: 512, alt: `${SITE_NAME} logo` }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
+  },
+  // Explicit icon set. iOS only picks up apple-touch-icon; Android reads the
+  // manifest; desktop browsers prefer the SVG and fall back to the PNGs.
+  icons: {
+    icon: [
+      { url: '/icons/favicon-16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/icons/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/favicon-48.png', sizes: '48x48', type: 'image/png' },
+      { url: '/icons/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: [
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180' },
+      { url: '/icons/apple-touch-icon-167.png', sizes: '167x167' },
+      { url: '/icons/apple-touch-icon-152.png', sizes: '152x152' },
+    ],
+    shortcut: ['/favicon.ico'],
+  },
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -62,6 +122,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://knnrmdkzoicjuuaaownb.supabase.co" />
         <link rel="dns-prefetch" href="https://knnrmdkzoicjuuaaownb.supabase.co" />
+        {/* Android adaptive icon + Windows tile colour. */}
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="msapplication-TileColor" content="#4F46E5" />
+        <meta name="msapplication-TileImage" content="/icons/icon-192.png" />
+        {/* Structured data: Organization, WebSite (with a SearchAction so
+            Google can render a search box) and OnlineStore. This is one of
+            the few SEO signals a single-page app can still deliver properly. */}
+        <script
+          type="application/ld+json"
+          // The payload is built from our own constants, never user input.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(siteJsonLd()) }}
+        />
       </head>
       {/* suppressHydrationWarning: browser extensions (ColorZilla, Grammarly…)
           inject attributes like cz-shortcut-listen onto <body> before React

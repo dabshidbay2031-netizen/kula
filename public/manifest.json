@@ -1,17 +1,35 @@
 {
-  "name": "Hamar Mall",
+  "id": "/",
+  "name": "Hamar Mall — Somalia's Online Marketplace",
   "short_name": "Hamar Mall",
-  "description": "E-commerce & Point of Sale",
+  "description": "Buy and sell online across Somalia. Shop from local stores in Mogadishu and beyond, pay with EVC Plus, ZAAD, SAHAL or eDahab, or run your own shop with a full point-of-sale.",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#F1F5F9",
   "theme_color": "#4F46E5",
+  "categories": ["shopping", "business", "finance"],
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ],
   "shortcuts": [
-    { "name": "Explore", "url": "/",    "description": "Browse products" },
-    { "name": "POS",     "url": "/pos", "description": "Point of Sale" }
+    { "name": "Explore products", "short_name": "Explore", "url": "/#/",
+      "description": "Browse everything for sale",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Point of Sale", "short_name": "POS", "url": "/#/pos",
+      "description": "Ring up an in-store sale",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "My orders", "short_name": "Orders", "url": "/#/orders",
+      "description": "Track your orders",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }
