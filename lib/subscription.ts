@@ -23,7 +23,7 @@ export const SUBSCRIPTION_CURRENCY    = 'USD';
 export const SUBSCRIPTION_PRICES = { supplier: 24.99, business: 14.99 } as const;
 
 export type BillablePlan       = 'supplier' | 'business';
-export type SubscriptionStatus = 'unpaid' | 'refundable' | 'active' | 'expired' | 'refunded';
+export type SubscriptionStatus = 'unpaid' | 'trial' | 'refundable' | 'active' | 'expired' | 'refunded';
 
 const DAY_MS = 86_400_000;
 
@@ -62,6 +62,12 @@ export interface SubscriptionInput {
   /** End of the paid month. Null with the column present = derive from paidAt. */
   subscriptionPeriodEnd?:   string | null;
   /**
+   * Admin-granted free trial. Unlocks the dashboard without payment — but a
+   * trial is NOT a payment: it earns a field agent nothing (see
+   * lib/agentCommission) and does not start the money-back window.
+   */
+  trialEndsAt?:             string | null;
+  /**
    * False when the DB has no subscription columns yet (migration_subscriptions.sql
    * not run). Without this, an absent column reads as "never paid" and would lock
    * every existing seller out. Absent/undefined = assume enabled.
@@ -90,6 +96,10 @@ export interface SubscriptionState {
   periodEnd:       string | null;         // ISO — when this paid month runs out
   daysLeftInPeriod: number;               // whole days until renewal is due (0 once due)
   renewalDue:      boolean;               // period has run out — pay to continue
+  /** On a free trial right now (access without payment). */
+  onTrial:         boolean;
+  trialEndsAt:     string | null;
+  daysLeftInTrial: number;
 }
 
 /** Pure: turn stored subscription fields into a UI/enforcement state. */
@@ -108,6 +118,7 @@ export function deriveSubscription(
       status: 'active', locked: false, refundable: false,
       paidAt: null, refundedAt: null, refundDeadline: null, daysLeftToRefund: 0,
       periodEnd: null, daysLeftInPeriod: 0, renewalDue: false,
+      onTrial: false, trialEndsAt: null, daysLeftInTrial: 0,
     };
   }
 
@@ -118,20 +129,30 @@ export function deriveSubscription(
       status: 'active', locked: false, refundable: false,
       paidAt: null, refundedAt: null, refundDeadline: null, daysLeftToRefund: 0,
       periodEnd: null, daysLeftInPeriod: 0, renewalDue: false,
+      onTrial: false, trialEndsAt: null, daysLeftInTrial: 0,
     };
   }
+
+  // ── Admin-granted free trial ──
+  // Checked BEFORE the paid state so a trial can rescue a store that has
+  // lapsed or was never paid — that is the whole point of granting one.
+  const trialEnds = s?.trialEndsAt ?? null;
+  const trialLeftMs = trialEnds ? new Date(trialEnds).getTime() - now.getTime() : 0;
+  const onTrial     = trialLeftMs > 0;
+  const trialDays   = onTrial ? Math.ceil(trialLeftMs / DAY_MS) : 0;
 
   const paidAt     = s?.subscriptionPaidAt ?? null;
   const refundedAt = s?.subscriptionRefundedAt ?? null;
 
-  // Refunded, or never paid → locked, must (re)pay.
+  // Refunded, or never paid → locked, unless a free trial is running.
   if (refundedAt || !paidAt) {
     return {
       requiresSubscription: true, plan, price,
-      status: refundedAt ? 'refunded' : 'unpaid',
-      locked: true, refundable: false,
+      status: onTrial ? 'trial' : refundedAt ? 'refunded' : 'unpaid',
+      locked: !onTrial, refundable: false,
       paidAt, refundedAt, refundDeadline: null, daysLeftToRefund: 0,
-      periodEnd: null, daysLeftInPeriod: 0, renewalDue: true,
+      periodEnd: null, daysLeftInPeriod: 0, renewalDue: !onTrial,
+      onTrial, trialEndsAt: trialEnds, daysLeftInTrial: trialDays,
     };
   }
 
@@ -153,15 +174,17 @@ export function deriveSubscription(
   // then — a paid month always outlives its 7-day money-back window.
   return {
     requiresSubscription: true, plan, price,
-    status: expired ? 'expired' : within ? 'refundable' : 'active',
-    locked: expired,
+    status: expired ? (onTrial ? 'trial' : 'expired') : within ? 'refundable' : 'active',
+    // A running trial keeps the dashboard open even after the paid month ends.
+    locked: expired && !onTrial,
     refundable: within && !expired,
     paidAt, refundedAt: null,
     refundDeadline: deadline.toISOString(),
     daysLeftToRefund: daysLeft,
     periodEnd,
     daysLeftInPeriod: daysInPeriod,
-    renewalDue: expired,
+    renewalDue: expired && !onTrial,
+    onTrial, trialEndsAt: trialEnds, daysLeftInTrial: trialDays,
   };
 }
 

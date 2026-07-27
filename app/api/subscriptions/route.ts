@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { getAuthUser, ownsStoreOrAdmin } from '@/lib/apiAuth';
 import { errMsg, isMissingColumnError, isMissingTableError } from '@/lib/apiHelpers';
 import { initiateSifaloPayment } from '@/lib/payments/sifalo';
+import { accrueAgentCommission } from '@/lib/accrueCommission';
 import {
   deriveSubscription, planForAccountType, nextPeriodEnd, SUBSCRIPTION_PRICES,
   SUBSCRIPTION_CURRENCY, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_PERIOD_DAYS,
@@ -181,6 +182,11 @@ export async function POST(req: Request) {
       note: `${renewal ? 'Renewal' : 'Activation'} · ${SUBSCRIPTION_PERIOD_DAYS} days${pay.mock ? ' · mock charge' : ''}`,
     });
   } catch { /* ledger is best-effort */ }
+
+  // A real payment may have just earned the field agent who set this store up
+  // their next $6 instalment. Ledger-only and idempotent — never blocks or
+  // fails the payment itself.
+  await accrueAgentCommission(supplierId);
 
   const state = stateFrom({
     ...row,

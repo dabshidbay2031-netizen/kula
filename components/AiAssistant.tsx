@@ -2,8 +2,52 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { OPEN_ASSISTANT_EVENT } from '@/lib/assistant';
+import { useRouter } from '@/lib/hashRouter';
 
 interface Msg { role: 'user' | 'assistant'; content: string }
+
+/**
+ * Render a chat message as text with inline markdown links. Supports only
+ * [text](url) — anything else is shown verbatim. Internal links (starting with
+ * "/") open in-app via the hash router instead of a full page reload, so the
+ * assistant can deep-link to e.g. /signup-guide. Newlines are preserved
+ * (the bubble CSS uses white-space: pre-wrap).
+ */
+const LINK_RE = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+
+function MessageContent({ text }: { text: string }) {
+  const router = useRouter();
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let i = 0;
+  let m: RegExpExecArray | null;
+  // exec() is stateful with the /g flag, so we slice forward through the string.
+  while ((m = LINK_RE.exec(text)) !== null) {
+    if (m.index < last) continue;       // overlap guard
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const [, label, href] = m;
+    const internal = href.startsWith('/');
+    parts.push(
+      <a
+        key={`l${i++}`}
+        href={internal ? `#${href}` : href}
+        target={internal ? undefined : '_blank'}
+        rel={internal ? undefined : 'noopener noreferrer'}
+        className="ai-msg-link"
+        onClick={(e) => {
+          if (!internal) return;
+          e.preventDefault();
+          router.push(href);
+        }}
+      >
+        {label}
+      </a>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
 
 const GREETING: Msg = {
   role: 'assistant',
@@ -71,7 +115,9 @@ export default function AiAssistant() {
 
           <div className="ai-panel-body" ref={scrollRef}>
             {msgs.map((m, i) => (
-              <div key={i} className={`ai-msg ${m.role}`}>{m.content}</div>
+              <div key={i} className={`ai-msg ${m.role}`}>
+                <MessageContent text={m.content} />
+              </div>
             ))}
             {loading && <div className="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>}
           </div>

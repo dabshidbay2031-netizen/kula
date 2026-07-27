@@ -181,3 +181,44 @@ describe('nextPeriodEnd — renewing must not burn paid time', () => {
     expect(new Date(end).getTime()).toBe(NOW.getTime() + SUBSCRIPTION_PERIOD_DAYS * DAY);
   });
 });
+
+describe('admin-granted free trial', () => {
+  it('unlocks a store that has never paid', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: null, trialEndsAt: inDays(7) }, NOW);
+    expect(s.status).toBe('trial');
+    expect(s.locked).toBe(false);
+    expect(s.onTrial).toBe(true);
+    expect(s.daysLeftInTrial).toBe(7);
+  });
+
+  it('rescues a store whose paid month has expired', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(40),
+        subscriptionPeriodEnd: ago(5), trialEndsAt: inDays(3) }, NOW);
+    expect(s.locked).toBe(false);
+    expect(s.status).toBe('trial');
+  });
+
+  it('locks again the moment the trial lapses', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: null, trialEndsAt: ago(1) }, NOW);
+    expect(s.onTrial).toBe(false);
+    expect(s.locked).toBe(true);
+    expect(s.status).toBe('unpaid');
+  });
+
+  it('does NOT open the money-back window — a trial is not a payment', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: null, trialEndsAt: inDays(7) }, NOW);
+    expect(s.refundable).toBe(false);
+    expect(s.paidAt).toBeNull();
+  });
+
+  it('leaves a normally-paid store unaffected', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(10), subscriptionPeriodEnd: inDays(20) }, NOW);
+    expect(s.onTrial).toBe(false);
+    expect(s.status).toBe('active');
+  });
+});

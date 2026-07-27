@@ -11,11 +11,12 @@ import ProductImage from '@/components/ProductImage';
 import StoreAvatar from '@/components/StoreAvatar';
 import Pagination from '@/components/Pagination';
 import { usePagination } from '@/lib/usePagination';
+import { COMMISSION_PER_STORE, COMMISSION_INSTALMENTS } from '@/lib/agentCommission';
 import type { HeroBanner } from '@/app/api/settings/hero/route';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 type AdminRole = 'admin' | 'semi_admin' | null;
-type Tab = 'overview' | 'businesses' | 'products' | 'orders' | 'users' | 'team' | 'storefront' | 'payouts';
+type Tab = 'overview' | 'businesses' | 'review' | 'agents' | 'products' | 'orders' | 'users' | 'team' | 'storefront' | 'payouts';
 
 /** A shop's payout request, as served by /api/admin/payouts. */
 interface AdminPayout {
@@ -33,6 +34,15 @@ interface AdminStats {
 }
 interface AdminUser  { id: string; fullName: string; phone: string; avatar: string; verified: boolean; createdAt: string; }
 interface AdminEntry { id: number; userId: string; role: string; name: string; email: string; createdAt: string; }
+interface AdminAgent {
+  id: number; name: string; icon: string; status: 'pending' | 'approved' | 'rejected';
+  createdAt: string; stores: number; instalmentsDue: number; amountDue: number; amountPaid: number;
+}
+interface CommissionEntry {
+  supplierId: number; agentId: number; instalment: number; amount: number;
+  status: 'due' | 'paid'; earnedAt: string; paidAt: string | null;
+  agentName?: string; storeName?: string;
+}
 
 /* ── Shared helpers ─────────────────────────────────────────────────── */
 const fmtDate = (s: string) => s ? new Date(s).toLocaleDateString() : '—';
@@ -87,6 +97,11 @@ export default function AdminDashboard() {
   // Filter inputs — kept separate from the data so filtering is a VIEW, never
   // a mutation of the loaded rows.
   const [orderStatusFilter, setOrderStatusFilter] = useState('');
+  /* Field-agent desk: stores waiting for review, and the agents themselves. */
+  const [agents,      setAgents]      = useState<AdminAgent[]>([]);
+  const [commissions, setCommissions] = useState<CommissionEntry[]>([]);
+  const [trialDays,   setTrialDays]   = useState<Record<number, string>>({});
+  const [busyId,      setBusyId]      = useState<number | null>(null);
   const [userQuery,         setUserQuery]         = useState('');
   const [admins,    setAdmins]    = useState<AdminEntry[]>([]);
   const [loading,   setLoading]   = useState(false);
@@ -265,6 +280,13 @@ export default function AdminDashboard() {
       u.fullName?.toLowerCase().includes(q) || u.phone?.includes(q));
   }, [users, userQuery]);
 
+  /* Stores a field agent has finished and submitted — the review queue. */
+  const reviewQueue = useMemo(
+    () => businesses.filter(b => b.approvalStatus === 'pending' && b.agentSubmittedAt),
+    [businesses],
+  );
+  const pendingAgents = useMemo(() => agents.filter(a => a.status === 'pending').length, [agents]);
+
   const bizPager   = usePagination(filteredBusinesses, 25, bizQuery);
   const prodPager  = usePagination(filteredProducts, 25, `${prodQuery}|${prodCat}|${prodBiz}`);
   const orderPager = usePagination(filteredOrders, 25, orderStatusFilter);
@@ -289,6 +311,29 @@ export default function AdminDashboard() {
 
   // Keep the tab's pending badge honest even while another tab is open.
   useEffect(() => { if (role) loadPayouts(payoutFilter); }, [role, payoutFilter, loadPayouts]);
+
+  /* ── Field-agent desk ─────────────────────────────────────────── */
+  const loadAgents = useCallback(async () => {
+    try {
+      const r = await fetch('/api/admin/agents', { headers: await authHeaders() });
+      if (r.ok) { const d = await r.json(); setAgents(Array.isArray(d.agents) ? d.agents : []); }
+    } catch { /* desk simply stays empty */ }
+  }, []);
+
+  const loadCommissions = useCallback(async () => {
+    try {
+      const r = await fetch('/api/admin/commissions?status=all', { headers: await authHeaders() });
+      if (r.ok) { const d = await r.json(); setCommissions(Array.isArray(d.rows) ? d.rows : []); }
+    } catch { /* ledger not deployed yet */ }
+  }, []);
+
+  useEffect(() => {
+    if (!role) return;
+    // The review queue reads the businesses list; the agent desk has its own.
+    if (tab === 'agents') { loadAgents(); loadCommissions(); }
+    if (tab === 'review') load('businesses');
+  }, [tab, role, loadAgents, loadCommissions, load]);
+
 
   const decidePayout = async (id: number, status: 'approved' | 'rejected') => {
     setDecidingId(id);
@@ -375,6 +420,62 @@ export default function AdminDashboard() {
   };
 
   /* ── Trial approval decision ───────────────────────────────────── */
+
+  const decideAgent = async (agentId: number, action: 'approve' | 'reject') => {
+    setBusyId(agentId);
+    try {
+      const r = await fetch('/api/admin/agents', {
+        method: 'PATCH',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ agentId, action }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { toast(action === 'approve' ? 'Agent approved ✓' : 'Agent rejected', 'success'); loadAgents(); }
+      else toast(d.error || 'Could not update the agent', 'error');
+    } finally { setBusyId(null); }
+  };
+
+  const payCommission = async (c: CommissionEntry, action: 'pay' | 'unpay') => {
+    setBusyId(c.supplierId * 10 + c.instalment);
+    try {
+      const r = await fetch('/api/admin/commissions', {
+        method: 'PATCH',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ supplierId: c.supplierId, instalment: c.instalment, action }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { toast(action === 'pay' ? 'Marked paid ✓' : 'Marked unpaid', 'success'); loadCommissions(); loadAgents(); }
+      else toast(d.error || 'Could not update the commission', 'error');
+    } finally { setBusyId(null); }
+  };
+
+  /** Give a store N free days. A trial unlocks the dashboard but is NOT a
+   *  payment — it never earns an agent a commission. */
+  const grantTrial = async (b: Supplier, days: number) => {
+    setBusyId(b.id);
+    try {
+      const r = await fetch('/api/admin/trial', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ supplierId: b.id, days }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { toast(`${days}-day free trial granted ✓`, 'success'); load('businesses'); }
+      else toast(d.error || 'Could not grant the trial', 'error');
+    } finally { setBusyId(null); }
+  };
+
+  const revokeTrial = async (b: Supplier) => {
+    setBusyId(b.id);
+    try {
+      const r = await fetch(`/api/admin/trial?supplierId=${b.id}`, {
+        method: 'DELETE', headers: await authHeaders(),
+      });
+      if (r.ok) { toast('Trial revoked', 'success'); load('businesses'); }
+      else toast('Could not revoke the trial', 'error');
+    } finally { setBusyId(null); }
+  };
+
   const setApproval = async (b: Supplier, approvalStatus: 'approved' | 'rejected') => {
     const res = await fetch(`/api/suppliers/${b.id}`, {
       method:'PATCH', headers: await authHeaders({ 'Content-Type':'application/json' }),
@@ -500,7 +601,9 @@ export default function AdminDashboard() {
     { key:'products',    label:'📦 Products'    },
     { key:'orders',      label:'🧾 Orders'      },
     { key:'users',       label:'👥 Users'       },
+    { key:'review' as Tab, label: reviewQueue.length > 0 ? `📝 Review (${reviewQueue.length})` : '📝 Review' },
     ...(isAdmin ? [
+      { key:'agents'     as Tab, label: pendingAgents > 0 ? `🧑‍💼 Agents (${pendingAgents})` : '🧑‍💼 Agents' },
       { key:'payouts'    as Tab, label: payoutTotals.pendingCount > 0 ? `💸 Payouts (${payoutTotals.pendingCount})` : '💸 Payouts' },
       { key:'storefront' as Tab, label:'🎨 Storefront' },
       { key:'team'       as Tab, label:'👑 Team' },
@@ -987,6 +1090,142 @@ export default function AdminDashboard() {
             )}
 
             {/* ── PAYOUTS (admin only) ────────────────────────────── */}
+            {/* ── REVIEW QUEUE: stores a field agent finished ───── */}
+            {tab === 'review' && (
+              <div>
+                <p style={{ color:'var(--text-muted)', fontSize:'.85rem', marginBottom:14 }}>
+                  Stores a field agent has set up and submitted. Approving one ends the
+                  agent&apos;s edit access and starts their commission — the first
+                  ${COMMISSION_PER_STORE} is earned once the store makes a real payment.
+                </p>
+                {reviewQueue.length === 0 ? (
+                  <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', padding:32, textAlign:'center', color:'var(--text-muted)' }}>
+                    Nothing waiting for review.
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                    {reviewQueue.map(b => (
+                      <div key={b.id} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:12, padding:'14px 16px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                          <strong>{b.icon} {b.name}</strong>
+                          <span style={{ fontSize:'.74rem', color:'var(--text-muted)' }}>
+                            {b.accountType} · submitted {b.agentSubmittedAt ? new Date(b.agentSubmittedAt).toLocaleDateString() : '—'}
+                          </span>
+                          <span style={{ marginLeft:'auto', fontSize:'.74rem', color:'var(--text-muted)' }}>
+                            agent #{b.registeredByAgentId ?? '—'}
+                          </span>
+                        </div>
+                        <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
+                          {isAdmin && (
+                            <>
+                              <button className="btn btn-primary btn-sm" disabled={busyId === b.id}
+                                onClick={() => setApproval(b, 'approved')}>✓ Approve setup</button>
+                              <button className="btn btn-ghost btn-sm" disabled={busyId === b.id}
+                                onClick={() => setApproval(b, 'rejected')}>Reject</button>
+                              <span style={{ width:1, background:'var(--border)', margin:'0 4px' }} />
+                              <button className="btn btn-secondary btn-sm" disabled={busyId === b.id}
+                                onClick={() => grantTrial(b, 7)}>🎁 7-day free trial</button>
+                            </>
+                          )}
+                          {b.slug && <a className="btn btn-ghost btn-sm" href={`#/${b.slug}`}>View store →</a>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── AGENTS: register, approve, and pay commission ───── */}
+            {tab === 'agents' && isAdmin && (
+              <div>
+                <p style={{ color:'var(--text-muted)', fontSize:'.85rem', marginBottom:14 }}>
+                  ${COMMISSION_PER_STORE} per store, paid for {COMMISSION_INSTALMENTS} months while the
+                  store keeps paying its bill. An agent earns nothing until you approve them
+                  here, and a free trial never counts as a payment.
+                </p>
+
+                <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', overflow:'hidden', marginBottom:20 }}>
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={tbl}>
+                      <thead><tr>
+                        <th style={th}>Agent</th><th style={th}>Status</th><th style={th}>Stores</th>
+                        <th style={th}>Owed</th><th style={th}>Paid</th><th style={th}>Actions</th>
+                      </tr></thead>
+                      <tbody>
+                        {agents.map(a => (
+                          <tr key={a.id}>
+                            <td style={td}>{a.icon} {a.name}</td>
+                            <td style={td}>
+                              <span style={{ fontWeight:700, fontSize:'.74rem',
+                                color: a.status === 'approved' ? '#059669' : a.status === 'rejected' ? '#dc2626' : '#d97706' }}>
+                                {a.status === 'approved' ? '✓ Approved' : a.status === 'rejected' ? '✕ Rejected' : '🕐 Pending'}
+                              </span>
+                            </td>
+                            <td style={td}>{a.stores}</td>
+                            <td style={{ ...td, fontWeight:800 }}>{fmtAmt(a.amountDue)}</td>
+                            <td style={td}>{fmtAmt(a.amountPaid)}</td>
+                            <td style={td}>
+                              {a.status !== 'approved' && (
+                                <button className="btn btn-primary btn-sm" disabled={busyId === a.id}
+                                  onClick={() => decideAgent(a.id, 'approve')}>Approve</button>
+                              )}
+                              {a.status !== 'rejected' && (
+                                <button className="btn btn-ghost btn-sm" disabled={busyId === a.id}
+                                  onClick={() => decideAgent(a.id, 'reject')}>Reject</button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {agents.length === 0 && (
+                          <tr><td colSpan={6} style={{ ...td, textAlign:'center', color:'var(--text-muted)' }}>No field agents yet</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <h3 style={{ fontSize:'.9rem', fontWeight:800, marginBottom:8 }}>Commission ledger</h3>
+                <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', overflow:'hidden' }}>
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={tbl}>
+                      <thead><tr>
+                        <th style={th}>Agent</th><th style={th}>Store</th><th style={th}>Month</th>
+                        <th style={th}>Amount</th><th style={th}>Status</th><th style={th}></th>
+                      </tr></thead>
+                      <tbody>
+                        {commissions.map(c => (
+                          <tr key={`${c.supplierId}-${c.instalment}`}>
+                            <td style={td}>{c.agentName}</td>
+                            <td style={td}>{c.storeName}</td>
+                            <td style={td}>{c.instalment} of {COMMISSION_INSTALMENTS}</td>
+                            <td style={{ ...td, fontWeight:700 }}>{fmtAmt(c.amount)}</td>
+                            <td style={td}>
+                              <span style={{ fontWeight:700, fontSize:'.74rem', color: c.status === 'paid' ? '#059669' : '#d97706' }}>
+                                {c.status === 'paid' ? '✓ Paid' : 'Due'}
+                              </span>
+                            </td>
+                            <td style={td}>
+                              <button className="btn btn-ghost btn-sm"
+                                disabled={busyId === c.supplierId * 10 + c.instalment}
+                                onClick={() => payCommission(c, c.status === 'paid' ? 'unpay' : 'pay')}>
+                                {c.status === 'paid' ? 'Undo' : 'Mark paid'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {commissions.length === 0 && (
+                          <tr><td colSpan={6} style={{ ...td, textAlign:'center', color:'var(--text-muted)' }}>
+                            Nothing earned yet — commission appears once an approved store pays.
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {tab === 'payouts' && isAdmin && (
               <div>
                 <div style={{ marginBottom: 14 }}>

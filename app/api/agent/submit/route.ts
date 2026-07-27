@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { errMsg, isMissingColumnError } from '@/lib/apiHelpers';
-import { getAuthUser, agentManagesStore } from '@/lib/apiAuth';
+import { getAuthUser, agentManagesStore, agentSupplierIdFor } from '@/lib/apiAuth';
+import { requireApprovedAgent } from '@/lib/agentGate';
 
 /**
  * POST /api/agent/submit  { storeId }
@@ -22,6 +23,14 @@ export async function POST(req: Request) {
 
   if (!(await agentManagesStore(user.id, storeId))) {
     return NextResponse.json({ error: 'Forbidden — not a store you’re setting up' }, { status: 403 });
+  }
+
+  // An unvetted agent cannot put work into the review queue, which is what
+  // would otherwise start their commission clock.
+  const agentId = await agentSupplierIdFor(user.id);
+  if (agentId != null) {
+    const barred = await requireApprovedAgent(agentId);
+    if (barred) return barred;
   }
 
   const now = new Date().toISOString();

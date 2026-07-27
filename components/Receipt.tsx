@@ -21,14 +21,25 @@ interface ReceiptProps {
   date?:         string | Date;
   /** Open the print dialog automatically (Settings → POS → Auto-Print). */
   autoPrint?:    boolean;
+  /** Show the order-tracking QR. POS-only setting (Settings → Point of Sale).
+   *  Online-sale receipts always pass true (default). */
+  showQr?:       boolean;
+  /** A merchant ID / phone printed under the business name. POS-only. */
+  merchantNumber?: string;
+  /** Up to 3 free-text lines printed at the very top of the receipt. POS-only. */
+  headerLines?:  string[];
   onClose:       () => void;
 }
 
 export default function Receipt({
   orderId, businessName, businessIcon, customerName,
-  paymentMethod, items, products, subtotal, discount, total, date, autoPrint, onClose,
+  paymentMethod, items, products, subtotal, discount, total, date, autoPrint,
+  showQr = true, merchantNumber, headerLines, onClose,
 }: ReceiptProps) {
   const ref = useRef<HTMLDivElement>(null);
+  // Header lines are optional and empty entries are skipped (so a store using
+  // only one or two lines doesn't print blank rows).
+  const visibleHeaderLines = (headerLines ?? []).map(l => l.trim()).filter(Boolean);
 
   /**
    * QR code → live order page. Scanning it (store owner or customer)
@@ -47,15 +58,17 @@ export default function Receipt({
     return () => { cancelled = true; };
   }, [orderUrl]);
 
-  // Auto-print (POS setting): give the QR a beat to render, then print once.
+  // Auto-print (POS setting): when the QR is shown, give it a beat to render so
+  // the printed copy isn't missing it; when the QR is hidden, print right away.
   const printedRef = useRef(false);
   useEffect(() => {
-    if (!autoPrint || printedRef.current || !qrDataUrl) return;
+    if (!autoPrint || printedRef.current) return;
+    if (showQr && !qrDataUrl) return;   // wait for the QR to finish rendering
     printedRef.current = true;
     const t = setTimeout(() => handlePrint(), 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPrint, qrDataUrl]);
+  }, [autoPrint, qrDataUrl, showQr]);
 
   function handlePrint() {
     const content = ref.current?.innerHTML ?? '';
@@ -141,6 +154,15 @@ export default function Receipt({
             {/* Receipt preview */}
             <div ref={ref} style={{ fontFamily:"'Courier New', monospace", fontSize:13, color:'#000', lineHeight:1.5 }}>
 
+              {/* Optional POS header lines (Settings → Point of Sale) */}
+              {visibleHeaderLines.length > 0 && (
+                <div style={{ textAlign:'center', paddingBottom:8, marginBottom:8, borderBottom:'2px dashed #000' }}>
+                  {visibleHeaderLines.map((line, i) => (
+                    <div key={i} style={{ fontSize:12, fontWeight:600 }}>{line}</div>
+                  ))}
+                </div>
+              )}
+
               {/* Business header */}
               <div className="r-head" style={{ textAlign:'center', paddingBottom:12, borderBottom:'2px dashed #000', marginBottom:12 }}>
                 {businessIcon && (
@@ -158,6 +180,9 @@ export default function Receipt({
                   )
                 )}
                 <div style={{ fontSize:16, fontWeight:700, marginTop:4 }}>{businessName || 'Hamar Mall'}</div>
+                {merchantNumber && (
+                  <div style={{ fontSize:11, color:'#555', marginTop:2 }}>Merchant: {merchantNumber}</div>
+                )}
                 <div style={{ fontSize:11, letterSpacing:2, textTransform:'uppercase', color:'#555', marginTop:2 }}>Receipt</div>
                 <div style={{ fontSize:11, marginTop:8, color:'#555' }}>
                   {dateStr} · {timeStr}
@@ -202,22 +227,24 @@ export default function Receipt({
                 </div>
               </div>
 
-              {/* QR — scan to open the live order */}
-              <div style={{ textAlign:'center', padding:'12px 0', borderBottom:'2px dashed #000' }}>
-                {qrDataUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={qrDataUrl}
-                    alt={`QR code for order ${orderId}`}
-                    width={132}
-                    height={132}
-                    style={{ display:'block', margin:'0 auto' }}
-                  />
-                )}
-                <div style={{ fontSize:10, color:'#555', marginTop:6, letterSpacing:1, textTransform:'uppercase' }}>
-                  Scan to view this order
+              {/* QR — scan to open the live order (POS can hide it via Settings) */}
+              {showQr && (
+                <div style={{ textAlign:'center', padding:'12px 0', borderBottom:'2px dashed #000' }}>
+                  {qrDataUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={qrDataUrl}
+                      alt={`QR code for order ${orderId}`}
+                      width={132}
+                      height={132}
+                      style={{ display:'block', margin:'0 auto' }}
+                    />
+                  )}
+                  <div style={{ fontSize:10, color:'#555', marginTop:6, letterSpacing:1, textTransform:'uppercase' }}>
+                    Scan to view this order
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Footer */}
               <div style={{ textAlign:'center', fontSize:11, color:'#555', marginTop:12 }}>

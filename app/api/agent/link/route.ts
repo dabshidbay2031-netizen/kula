@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { errMsg, isMissingColumnError } from '@/lib/apiHelpers';
 import { getAuthUser, agentSupplierIdFor } from '@/lib/apiAuth';
+import { requireApprovedAgent } from '@/lib/agentGate';
 
 /**
  * POST /api/agent/link  { code }
@@ -22,6 +23,8 @@ export async function POST(req: Request) {
   if (agentId == null) {
     return NextResponse.json({ error: 'Only a field-agent account can register stores' }, { status: 403 });
   }
+  // An agent must be vetted before they can touch a real store.
+  { const barred = await requireApprovedAgent(agentId); if (barred) return barred; }
 
   const body = await req.json().catch(() => ({}));
   const code = String(body.code ?? '').trim().toUpperCase();

@@ -17,6 +17,12 @@ const DEFAULTS = {
   defaultPayment:      'cash',
   requireCustomerName: false,
   autoPrint:           false,
+  // POS receipt customization (POS receipts only — online receipts unchanged).
+  receiptQr:           true,
+  merchantNumber:      '',
+  receiptHeader1:      '',
+  receiptHeader2:      '',
+  receiptHeader3:      '',
 };
 
 type Settings = typeof DEFAULTS;
@@ -53,6 +59,11 @@ export default function SettingsPage() {
           defaultPayment:      ['cash', 'waafi', 'card'].includes(saved.defaultPayment) ? saved.defaultPayment : 'cash',
           requireCustomerName: !!saved.requireCustomerName,
           autoPrint:           !!saved.autoPrint,
+          receiptQr:           saved.receiptQr !== undefined ? !!saved.receiptQr : true,
+          merchantNumber:      typeof saved.merchantNumber === 'string' ? saved.merchantNumber : '',
+          receiptHeader1:      typeof saved.receiptHeader1 === 'string' ? saved.receiptHeader1 : '',
+          receiptHeader2:      typeof saved.receiptHeader2 === 'string' ? saved.receiptHeader2 : '',
+          receiptHeader3:      typeof saved.receiptHeader3 === 'string' ? saved.receiptHeader3 : '',
         });
       }
     } catch {}
@@ -298,6 +309,71 @@ export default function SettingsPage() {
                 <div className="sett-row-sub">Opens the print dialog after every sale</div>
               </div>
               <Toggle checked={s.autoPrint} onChange={v => set('autoPrint', v)} />
+            </div>
+          </div>
+
+          {/* Receipt customization — POS receipts only. Online-sale receipts
+              are unaffected (they don't read these settings). */}
+          <div className="sett-card" style={{ marginTop: 12 }}>
+            <div className="sett-section-title" style={{ fontSize: '.85rem', marginBottom: 4 }}>🧾 Receipt</div>
+            <div className="sett-row">
+              <div className="sett-row-info">
+                <div className="sett-row-label">QR Code on Receipt</div>
+                <div className="sett-row-sub">Show the order-tracking QR</div>
+              </div>
+              <Toggle checked={s.receiptQr} onChange={v => set('receiptQr', v)} />
+            </div>
+            <div className="sett-row">
+              <div className="sett-row-info">
+                <div className="sett-row-label">Merchant Number</div>
+                <div className="sett-row-sub">Printed under the store name</div>
+              </div>
+              <input
+                className="sett-input"
+                value={s.merchantNumber}
+                onChange={e => set('merchantNumber', e.target.value)}
+                placeholder="e.g. 0612345678"
+                maxLength={60}
+              />
+            </div>
+            <div className="sett-row">
+              <div className="sett-row-info">
+                <div className="sett-row-label">Receipt Header Line 1</div>
+                <div className="sett-row-sub">Printed at the very top</div>
+              </div>
+              <input
+                className="sett-input"
+                value={s.receiptHeader1}
+                onChange={e => set('receiptHeader1', e.target.value)}
+                placeholder="e.g. Branch name"
+                maxLength={80}
+              />
+            </div>
+            <div className="sett-row">
+              <div className="sett-row-info">
+                <div className="sett-row-label">Receipt Header Line 2</div>
+                <div className="sett-row-sub">Printed at the very top</div>
+              </div>
+              <input
+                className="sett-input"
+                value={s.receiptHeader2}
+                onChange={e => set('receiptHeader2', e.target.value)}
+                placeholder="e.g. Address"
+                maxLength={80}
+              />
+            </div>
+            <div className="sett-row">
+              <div className="sett-row-info">
+                <div className="sett-row-label">Receipt Header Line 3</div>
+                <div className="sett-row-sub">Printed at the very top</div>
+              </div>
+              <input
+                className="sett-input"
+                value={s.receiptHeader3}
+                onChange={e => set('receiptHeader3', e.target.value)}
+                placeholder="e.g. Phone"
+                maxLength={80}
+              />
             </div>
           </div>
         </div>

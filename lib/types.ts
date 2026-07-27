@@ -107,6 +107,11 @@ export interface Supplier {
   subscriptionPaidAt?:     string | null;
   subscriptionRefundedAt?: string | null;
   subscriptionPeriodEnd?:  string | null;   // end of the paid month
+  /** Admin-granted free trial end. Unlocks access; never counts as a payment. */
+  trialEndsAt?:            string | null;
+  /** Agent vetting (agent accounts only) — unapproved agents earn nothing. */
+  agentApprovedAt?:        string | null;
+  agentRejectedAt?:        string | null;
   subscriptionPlan?:       string | null;
   subscriptionAmount?:     number | null;
 }

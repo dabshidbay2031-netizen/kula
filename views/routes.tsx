@@ -52,6 +52,8 @@ export const ROUTES: RouteDef[] = [
   { pattern: '/refunds',        component: lazy(() => import('@/views/LegalView')) },
   { pattern: '/about',          component: lazy(() => import('@/views/LegalView')) },
   { pattern: '/contact',        component: lazy(() => import('@/views/LegalView')) },
+  // Signup walkthrough — shown via screenshots, linked from the AI assistant.
+  { pattern: '/signup-guide',   component: lazy(() => import('@/views/SignupGuideView')) },
   { pattern: '/auth/login',     component: lazy(() => import('@/views/LoginView')) },
   { pattern: '/auth/signup',    component: lazy(() => import('@/views/SignupView')) },
   { pattern: '/auth/callback',  component: lazy(() => import('@/views/AuthCallbackView')) },

@@ -4,13 +4,14 @@
 // Run against the running dev server (npm run dev on :3001):
 //   node scripts/signup-guide.mjs
 //
-// Output: signup-guide/01-*.png ... 08-*.png
+// Output: public/signup-guide/01-*.png ... 09-*.png (served by Next.js so the
+// in-app AI assistant can link users to the guide at /#/signup-guide).
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 
 const BASE = 'http://localhost:3001';
-const OUT  = path.resolve('signup-guide');
+const OUT  = path.resolve('public/signup-guide');
 fs.mkdirSync(OUT, { recursive: true });
 
 // Mobile viewport (matches the iPhone-class PWA the app is built for).

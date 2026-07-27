@@ -46,6 +46,12 @@ function mapSupplier(s: Record<string, unknown>) {
     subscriptionPaidAt:     (s.subscription_paid_at as string | undefined) ?? null,
     subscriptionRefundedAt: (s.subscription_refunded_at as string | undefined) ?? null,
     subscriptionPeriodEnd:  (s.subscription_period_end as string | undefined) ?? null,
+    /* Admin-granted free trial (migration_v4_6) — unlocks the dashboard
+       without payment, and never counts as a payment. */
+    trialEndsAt:            (s.trial_ends_at as string | undefined) ?? null,
+    /* Field-agent vetting: an agent earns nothing until an admin approves. */
+    agentApprovedAt:        (s.agent_approved_at as string | undefined) ?? null,
+    agentRejectedAt:        (s.agent_rejected_at as string | undefined) ?? null,
     subscriptionPlan:       (s.subscription_plan as string | undefined) ?? null,
     subscriptionAmount:     s.subscription_amount != null ? Number(s.subscription_amount) : null,
   };

@@ -1054,6 +1054,8 @@ ul { list-style: none; }
 }
 .ai-msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .ai-msg.user      { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+.ai-msg-link { color: var(--primary); text-decoration: underline; font-weight: 600; }
+.ai-msg.user .ai-msg-link { color: #fff; }
 .ai-typing { display: flex; gap: 4px; align-items: center; }
 .ai-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: aiBlink 1.2s infinite both; }
 .ai-typing span:nth-child(2) { animation-delay: .2s; }
