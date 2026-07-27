@@ -35,6 +35,23 @@ export interface ExportInvoice {
   createdAt:    string;
   /** Individual repayments against this invoice, if loaded. */
   payments?:    ExportPayment[];
+  /** What was bought on credit — price is the snapshot taken at sale time. */
+  items?:       InvoiceItem[];
+}
+
+export interface InvoiceItem {
+  id?:    number;
+  name?:  string;
+  price?: number;
+  qty?:   number;
+}
+
+/** "Sonko 2 × $1.50; Biskut 1 × $3.00" — readable in one spreadsheet cell. */
+export function itemsLabel(items: InvoiceItem[] | null | undefined): string {
+  if (!Array.isArray(items) || !items.length) return '';
+  return items
+    .map(it => `${it.name ?? 'item'} ${Number(it.qty) || 0} × $${money2(Number(it.price) || 0).toFixed(2)}`)
+    .join('; ');
 }
 
 /**
@@ -109,6 +126,11 @@ export interface CustomerCredit {
   outstanding:  number;
   oldestUnpaid: string | null;
   lastActivity: string | null;
+  /** How many separate repayments they made in the period. */
+  timesPaid:      number;
+  firstPaymentAt: string | null;
+  lastPaymentAt:  string | null;
+  lastPaymentAmt: number;
 }
 
 /** Roll invoices up per customer, newest activity and oldest debt included. */
@@ -131,6 +153,10 @@ export function summarise(
       outstanding:  0,
       oldestUnpaid: null,
       lastActivity: null,
+      timesPaid:      0,
+      firstPaymentAt: null,
+      lastPaymentAt:  null,
+      lastPaymentAmt: 0,
     };
 
     const owed = outstanding(inv);
@@ -145,6 +171,19 @@ export function summarise(
     if (!row.lastActivity || inv.createdAt > row.lastActivity) {
       row.lastActivity = inv.createdAt;
     }
+
+    // Each repayment counted individually — "he paid 3 times this month" is
+    // the question a shop actually asks, and invoice.paidTotal alone can't
+    // answer it.
+    for (const p of inv.payments ?? []) {
+      row.timesPaid += 1;
+      if (!row.firstPaymentAt || p.paidAt < row.firstPaymentAt) row.firstPaymentAt = p.paidAt;
+      if (!row.lastPaymentAt  || p.paidAt > row.lastPaymentAt) {
+        row.lastPaymentAt  = p.paidAt;
+        row.lastPaymentAmt = money2(p.amount);
+      }
+      if (p.paidAt > (row.lastActivity ?? '')) row.lastActivity = p.paidAt;
+    }
     byCustomer.set(key, row);
   }
 
@@ -152,15 +191,17 @@ export function summarise(
   return Array.from(byCustomer.values()).sort((a, b) => b.outstanding - a.outstanding);
 }
 
-const fmtDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
-
 export function summaryCsv(rows: CustomerCredit[]): string {
   return toCsv(
-    ['Customer', 'Phone', 'Invoices', 'Total billed', 'Total paid', 'Outstanding', 'Oldest unpaid', 'Last activity'],
+    ['Customer', 'Phone', 'Invoices', 'Total billed', 'Total paid', 'Outstanding',
+     'Times paid', 'First payment', 'Last payment', 'Last payment time', 'Last payment amount',
+     'Oldest unpaid', 'Last activity'],
     rows.map(r => [
       r.customerName, r.phone, r.invoices,
       r.billed.toFixed(2), r.paid.toFixed(2), r.outstanding.toFixed(2),
-      fmtDate(r.oldestUnpaid), fmtDate(r.lastActivity),
+      r.timesPaid, localDate(r.firstPaymentAt), localDate(r.lastPaymentAt),
+      localTime(r.lastPaymentAt), r.timesPaid ? r.lastPaymentAmt.toFixed(2) : '',
+      localDate(r.oldestUnpaid), localDate(r.lastActivity),
     ]),
   );
 }
@@ -169,12 +210,51 @@ export function detailCsv(invoices: ExportInvoice[], customers: ExportCustomer[]
   const phoneById = new Map(customers.map(c => [String(c.id), c.phone ?? '']));
   const sorted = [...invoices].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   return toCsv(
-    ['Invoice', 'Date', 'Customer', 'Phone', 'Total', 'Paid', 'Outstanding', 'Status', 'Notes'],
-    sorted.map(i => [
-      i.id, fmtDate(i.createdAt), i.customerName, phoneById.get(String(i.customerId)) ?? '',
-      money2(i.total).toFixed(2), money2(i.paidTotal).toFixed(2), outstanding(i).toFixed(2),
-      i.status, i.notes ?? '',
-    ]),
+    ['Invoice', 'Debited date', 'Debited time', 'Customer', 'Phone',
+     'Total', 'Paid', 'Outstanding', 'Status',
+     'Times paid', 'Last payment', 'Last payment time', 'Items', 'Notes'],
+    sorted.map(i => {
+      const pays = [...(i.payments ?? [])].sort((a, b) => (a.paidAt < b.paidAt ? 1 : -1));
+      const last = pays[0] ?? null;
+      return [
+        i.id, localDate(i.createdAt), localTime(i.createdAt),
+        i.customerName, phoneById.get(String(i.customerId)) ?? '',
+        money2(i.total).toFixed(2), money2(i.paidTotal).toFixed(2), outstanding(i).toFixed(2),
+        i.status,
+        pays.length, localDate(last?.paidAt), localTime(last?.paidAt),
+        itemsLabel(i.items), i.notes ?? '',
+      ];
+    }),
+  );
+}
+
+/**
+ * One row per REPAYMENT: when it was handed over, how much, and how.
+ * This is the sheet that answers "how many times did she pay this month, how
+ * much each time, and at what time" — the summary only gives the last one.
+ */
+export function paymentsCsv(invoices: ExportInvoice[], customers: ExportCustomer[] = []): string {
+  const phoneById = new Map(customers.map(c => [String(c.id), c.phone ?? '']));
+  const rows: { p: ExportPayment; inv: ExportInvoice }[] = [];
+  for (const inv of invoices) {
+    for (const p of inv.payments ?? []) rows.push({ p, inv });
+  }
+  rows.sort((a, b) => (a.p.paidAt < b.p.paidAt ? 1 : -1));   // newest first
+
+  let running = 0;
+  return toCsv(
+    ['Date', 'Time', 'Customer', 'Phone', 'Invoice', 'Amount paid', 'Method',
+     'Invoice total', 'Still owed on invoice', 'Note'],
+    rows.map(({ p, inv }) => {
+      running = money2(running + p.amount);
+      return [
+        localDate(p.paidAt), localTime(p.paidAt),
+        inv.customerName, phoneById.get(String(inv.customerId)) ?? '',
+        inv.id, money2(p.amount).toFixed(2), p.method || 'cash',
+        money2(inv.total).toFixed(2), outstanding(inv).toFixed(2),
+        p.note ?? '',
+      ];
+    }),
   );
 }
 

@@ -4,8 +4,8 @@ import { errMsg } from '@/lib/apiHelpers';
 import { requireSupplierAccess } from '@/lib/apiAuth';
 import { currentPeriodRange, type Period } from '@/lib/dashboardPeriod';
 import {
-  summarise, summaryCsv, detailCsv, exportFileName,
-  type ExportInvoice, type ExportCustomer,
+  summarise, summaryCsv, detailCsv, paymentsCsv, exportFileName,
+  type ExportInvoice, type ExportCustomer, type ExportPayment,
 } from '@/lib/creditExport';
 
 /**
@@ -36,12 +36,17 @@ export async function GET(req: Request) {
   if (!PERIODS.has(periodRaw)) {
     return NextResponse.json({ error: 'period must be day, week, month, year or all' }, { status: 400 });
   }
-  const shape = searchParams.get('shape') === 'detail' ? 'detail' : 'summary';
+  const shapeRaw = String(searchParams.get('shape') ?? 'summary');
+  const shape: 'summary' | 'detail' | 'payments' =
+    shapeRaw === 'detail' ? 'detail' : shapeRaw === 'payments' ? 'payments' : 'summary';
 
   try {
     const sb = getSupabaseAdmin();
     let q = sb.from('invoices')
-      .select('id, customer_id, customer_name, total, paid_total, status, notes, created_at')
+      // invoice_payments carries each individual repayment (amount, method,
+      // paid_at) — the invoice row alone only knows the running paid_total,
+      // so it cannot say how many times or when someone paid.
+      .select('id, customer_id, customer_name, total, paid_total, status, notes, created_at, items, invoice_payments(amount, method, note, paid_at)')
       .eq('supplier_id', supplierId)
       .order('created_at', { ascending: false });
 
@@ -66,6 +71,14 @@ export async function GET(req: Request) {
       status:       String(r.status ?? ''),
       notes:        (r.notes as string | null) ?? null,
       createdAt:    String(r.created_at),
+      items:        Array.isArray(r.items) ? r.items : [],
+      payments:     ((r.invoice_payments as Record<string, unknown>[] | null) ?? []).map(p => ({
+        invoiceId: String(r.id),
+        amount:    Number(p.amount) || 0,
+        method:    String(p.method ?? 'cash'),
+        note:      (p.note as string | null) ?? null,
+        paidAt:    String(p.paid_at),
+      })) as ExportPayment[],
     }));
 
     // Phone numbers come from the store's own customer book — the whole point
@@ -79,9 +92,9 @@ export async function GET(req: Request) {
       }));
     } catch { /* phone column optional — export still works without it */ }
 
-    const csv = shape === 'detail'
-      ? detailCsv(invoices, customers)
-      : summaryCsv(summarise(invoices, customers));
+    const csv = shape === 'detail'   ? detailCsv(invoices, customers)
+              : shape === 'payments' ? paymentsCsv(invoices, customers)
+              :                        summaryCsv(summarise(invoices, customers));
 
     const { data: store } = await sb
       .from('suppliers').select('name').eq('id', supplierId).maybeSingle();

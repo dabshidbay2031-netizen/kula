@@ -31,6 +31,17 @@ function makeId() {
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+/** Date AND time, in Mogadishu time — a shop reconciling "he paid at 9pm"
+ *  must not be shown the UTC hour. */
+function fmtDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString('en-GB', {
+      timeZone: 'Africa/Mogadishu',
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+  } catch { return fmtDate(iso); }
+}
 
 const emptyForm = { name: '', phone: '', email: '', address: '', gender: '', notes: '' };
 type FormState = typeof emptyForm;
@@ -67,7 +78,7 @@ export default function CustomersPage() {
   const [exportPeriod, setExportPeriod] = useState('month');
   const [exporting,    setExporting]    = useState(false);
 
-  const downloadCredits = useCallback(async (shape: 'summary' | 'detail') => {
+  const downloadCredits = useCallback(async (shape: 'summary' | 'detail' | 'payments') => {
     if (supplierId == null) return;
     setExporting(true);
     try {
@@ -546,8 +557,13 @@ export default function CustomersPage() {
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => downloadCredits('detail')}
             disabled={exporting || supplierId == null}
-            title="Download every credit invoice — the full ledger">
+            title="Every credit invoice: what was bought, when, and what's still owed">
             Full ledger
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => downloadCredits('payments')}
+            disabled={exporting || supplierId == null}
+            title="Every repayment: date, time and amount">
+            Payments
           </button>
           <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Customer</button>
         </div>
@@ -900,25 +916,61 @@ export default function CustomersPage() {
                 </div>
               )}
 
-              {/* Simple invoice list — one line each */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {/* Invoice list — each one shows WHAT was taken on credit and
+                  every repayment against it, so a disagreement about a debt
+                  can be settled from this screen alone. */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ledgerInvoices.map(inv => {
                   const units = inv.items.reduce((n, i) => n + i.qty, 0);
+                  const pays  = [...(inv.payments ?? [])].sort((a, b) => (a.paidAt < b.paidAt ? 1 : -1));
                   return (
-                    <div key={inv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 10 }}>
-                      <div>
-                        <div style={{ fontSize: '.82rem', fontWeight: 700 }}>${inv.total.toFixed(2)}</div>
-                        <div style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>
-                          {fmtDate(inv.createdAt)} · {units} item{units !== 1 ? 's' : ''}
+                    <div key={inv.id} style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: '.82rem', fontWeight: 700 }}>${inv.total.toFixed(2)}</div>
+                          <div style={{ fontSize: '.72rem', color: 'var(--text-muted)' }}>
+                            {fmtDateTime(inv.createdAt)} · {units} item{units !== 1 ? 's' : ''}
+                          </div>
                         </div>
+                        <span style={{
+                          fontSize: '.7rem', fontWeight: 800, padding: '3px 10px', borderRadius: 99, whiteSpace: 'nowrap',
+                          background: inv.status === 'paid' ? '#d1fae5' : inv.status === 'partial' ? '#fef3c7' : '#fee2e2',
+                          color:      inv.status === 'paid' ? '#059669' : inv.status === 'partial' ? '#d97706' : '#dc2626',
+                        }}>
+                          {inv.status === 'paid' ? '✓ Paid' : `Owes $${inv.balance.toFixed(2)}`}
+                        </span>
                       </div>
-                      <span style={{
-                        fontSize: '.7rem', fontWeight: 800, padding: '3px 10px', borderRadius: 99, whiteSpace: 'nowrap',
-                        background: inv.status === 'paid' ? '#d1fae5' : inv.status === 'partial' ? '#fef3c7' : '#fee2e2',
-                        color:      inv.status === 'paid' ? '#059669' : inv.status === 'partial' ? '#d97706' : '#dc2626',
-                      }}>
-                        {inv.status === 'paid' ? '✓ Paid' : `Owes $${inv.balance.toFixed(2)}`}
-                      </span>
+
+                      {/* What they bought */}
+                      {inv.items.length > 0 && (
+                        <ul style={{ margin: '8px 0 0', padding: '8px 0 0 0', listStyle: 'none', borderTop: '1px dashed var(--border)' }}>
+                          {inv.items.map((it, ix) => (
+                            <li key={`${inv.id}-${it.id}-${ix}`}
+                              style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '.76rem', padding: '2px 0' }}>
+                              <span style={{ color: 'var(--text)' }}>{it.name} <span style={{ color: 'var(--text-muted)' }}>× {it.qty}</span></span>
+                              <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                ${it.price.toFixed(2)} → <strong style={{ color: 'var(--text)' }}>${(it.price * it.qty).toFixed(2)}</strong>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      {/* Every repayment: when, how much, how */}
+                      {pays.length > 0 && (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+                          <div style={{ fontSize: '.68rem', fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>
+                            Paid {pays.length}×
+                          </div>
+                          {pays.map(p => (
+                            <div key={p.id}
+                              style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '.76rem', padding: '2px 0' }}>
+                              <span style={{ color: 'var(--text-muted)' }}>{fmtDateTime(p.paidAt)} · {p.method}</span>
+                              <strong style={{ color: 'var(--success, #059669)' }}>${Number(p.amount).toFixed(2)}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
