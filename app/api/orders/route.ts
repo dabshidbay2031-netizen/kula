@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { errMsg, jsonWithEtag } from '@/lib/apiHelpers';
 import { rateLimit, clientIp } from '@/lib/rateLimit';
-import { getAuthUser, isAdminUser, ownsStoreOrAdmin, requireSupplierAccess } from '@/lib/apiAuth';
+import { getAuthUser, isAdminUser, ownsStoreOrAdmin, requireSupplierAccess, canAccessStore } from '@/lib/apiAuth';
 import { pingRealtime, runAfterResponse } from '@/lib/realtimeServer';
 import { sendPushToStores, sellerStoreIds } from '@/lib/pushNotify';
 import { createNotifications } from '@/lib/notify';
@@ -88,9 +88,23 @@ const BUYER_SETTABLE_STATUS = new Set(['pending', 'bulk_pending']);
  * (buyer, selling stores, admin dashboard) and a Web Push to the store
  * owner(s). Runs after the response so checkout latency is untouched.
  */
-function notifyNewOrder(orderId: string, userId: string | null, items: OrderItem[], total: number) {
+function notifyNewOrder(
+  orderId: string, userId: string | null, items: OrderItem[], total: number,
+  opts: { silent?: boolean } = {},
+) {
   runAfterResponse(async () => {
     const sellers = await sellerStoreIds(items);
+
+    // A POS sale still pings the live dashboards — the owner watching takings
+    // should see them move — but raises no notification and sends no push.
+    if (opts.silent) {
+      pingRealtime([
+        'orders',
+        userId ? `user:${userId}` : null,
+        ...sellers.map(s => `store:${s}`),
+      ]);
+      return;
+    }
 
     // In-app notifications (Notifications page + bell badge): one for the buyer,
     // one for each selling store's owner. Look up owners from the store rows.
@@ -277,6 +291,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'items must be a non-empty array of { id, qty } with positive integer values' }, { status: 400 });
   }
 
+  /**
+   * An over-the-counter POS sale is silent: the cashier and the customer are
+   * both standing there, so an "order received" alert and a push to the owner's
+   * phone are pure noise. Only suppresses NOTIFICATIONS — the sale itself is
+   * recorded, attributed and pinged for live dashboards exactly as normal.
+   */
+  const silent = body.silent === true;
+
   const rawMethod     = typeof body.paymentMethod === 'string' ? body.paymentMethod.toLowerCase() : 'cash';
   const paymentMethod = VALID_PAYMENT_METHODS.has(rawMethod) ? rawMethod : 'cash';
   const isBulk        = paymentMethod === 'bulk';
@@ -308,11 +330,12 @@ export async function POST(req: Request) {
     if (BUYER_SETTABLE_STATUS.has(askedStatus)) {
       requestedStatus = askedStatus;
     } else {
-      // 'completed'/'shipped'/… — only the store that owns the sale (or an
-      // admin) may open an order already in that state.
-      const staff = await getAuthUser(req);
-      const allowed = staff != null && supplierId != null
-        && await ownsStoreOrAdmin(staff.id, supplierId);
+      // 'completed'/'shipped'/… — only the store that owns the sale may open an
+      // order already in that state. canAccessStore covers all three kinds of
+      // operator: platform admin, the owner's JWT, and a STAFF CASHIER holding
+      // 'pos' — who has no Supabase JWT at all. Checking getAuthUser alone
+      // would 403 every till operated by staff, i.e. most POS sales.
+      const allowed = supplierId != null && await canAccessStore(req, supplierId, 'pos');
       if (!allowed) {
         return NextResponse.json(
           { error: 'Forbidden — only the store can set that status' }, { status: 403 });
@@ -442,7 +465,7 @@ export async function POST(req: Request) {
             }
           } catch { /* pre-migration DB — order still stands */ }
         }
-        notifyNewOrder(String(created.id), userId, items, Number(created.total ?? 0));
+        notifyNewOrder(String(created.id), userId, items, Number(created.total ?? 0), { silent });
         return NextResponse.json(mapOrder(created), { status: 201 });
       }
       if (error) {
@@ -574,7 +597,7 @@ export async function POST(req: Request) {
 
       if (!v2Err && v2) {
         const created = v2 as Record<string, unknown>;
-        notifyNewOrder(String(created.id), userId, items, total);
+        notifyNewOrder(String(created.id), userId, items, total, { silent });
         return NextResponse.json(mapOrder(created), { status: 201 });
       }
       // A genuine stock refusal must surface as 409, not fall through and
@@ -707,7 +730,7 @@ export async function POST(req: Request) {
       if (liErr) console.error('[orders POST] order_items insert failed:', errMsg(liErr));
     }
 
-    notifyNewOrder(String(order!.id), userId, items, total);
+    notifyNewOrder(String(order!.id), userId, items, total, { silent });
     return NextResponse.json(mapOrder(order!), { status: 201 });
   } catch (e) {
     console.error('[orders POST]', errMsg(e));

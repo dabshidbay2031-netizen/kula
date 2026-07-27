@@ -70,6 +70,8 @@ vi.mock('@/lib/apiAuth', async (orig) => ({
   isAdminUser:       async () => false,
   ownsStoreOrAdmin:  async () => ownsStore,
   requireSupplierAccess: async () => null,
+  // A staff cashier passes this WITHOUT a JWT — that's the whole point.
+  canAccessStore:    async () => ownsStore,
 }));
 vi.mock('@/lib/realtimeServer', () => ({ pingRealtime: vi.fn(), runAfterResponse: vi.fn() }));
 vi.mock('@/lib/pushNotify', () => ({ sendPushToUsers: vi.fn(), sendPushToStores: vi.fn(), sellerStoreIds: vi.fn(async () => []) }));
@@ -200,5 +202,34 @@ describe('M1 — stock is taken atomically', () => {
     expect(line).toBeTruthy();
     expect(line?.product_id).toBe(5);
     expect(line?.qty).toBe(1);
+  });
+});
+
+describe('POS sale — silent and already completed', () => {
+  it('a till operator may open the sale as completed', async () => {
+    // ownsStore stands in for canAccessStore: owner OR staff cashier with 'pos'.
+    ownsStore = true;
+    const res = await post({ status: 'completed', supplierId: 27, silent: true });
+    expect(res.status).toBe(201);
+    expect(inserted.find(r => !r.__line)?.status).toBe('completed');
+  });
+
+  it('still refuses a random caller asking for completed', async () => {
+    ownsStore = false;
+    const res = await post({ status: 'completed', supplierId: 27, silent: true });
+    expect(res.status).toBe(403);
+  });
+
+  it('the silent flag does not leak into the order row', async () => {
+    ownsStore = true;
+    await post({ status: 'completed', supplierId: 27, silent: true });
+    const row = inserted.find(r => !r.__line)!;
+    expect('silent' in row).toBe(false);
+  });
+
+  it('an online sale is unaffected — still pending', async () => {
+    const res = await post({});
+    expect(res.status).toBe(201);
+    expect(inserted.find(r => !r.__line)?.status).toBe('pending');
   });
 });

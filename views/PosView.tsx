@@ -11,7 +11,7 @@ import { useMyProductIds } from '@/lib/useMyProductIds';
 import { CATEGORIES } from '@/lib/data';
 import { enqueueOrder, queueCount, onQueueChange } from '@/lib/offlineQueue';
 import { useCashier } from '@/context/CashierContext';
-import { readReceiptAutoPrintSetting } from '@/lib/receiptSettings';
+import { readReceiptAutoPrintSetting, readReceiptSettings, type ReceiptSettings } from '@/lib/receiptSettings';
 import type { CartItem, Customer, PaymentMethod, PosSession } from '@/lib/types';
 
 /* Register behavior configured in Settings → Point of Sale. */
@@ -123,12 +123,26 @@ export default function POSPage() {
 
   /* ── Settings (Settings → Point of Sale) ─────────────────────── */
   const [posSettings, setPosSettings] = useState<PosSettings>({ defaultPayment: 'cash', requireCustomerName: false, autoPrint: false });
+  /* POS-ONLY receipt customisation (QR toggle, merchant number, header lines).
+     Online-sale receipts deliberately don't read these. */
+  const [receiptCfg, setReceiptCfg] = useState<ReceiptSettings>(() => ({
+    receiptQr: true, merchantNumber: '', receiptHeader1: '', receiptHeader2: '', receiptHeader3: '',
+  }));
   useEffect(() => {
     const settings = readPosSettings();
     setPosSettings(settings);
     if (settings.autoPrint !== readReceiptAutoPrintSetting()) {
       setPosSettings(current => ({ ...current, autoPrint: readReceiptAutoPrintSetting() }));
     }
+    setReceiptCfg(readReceiptSettings());
+  }, []);
+
+  // Settings live in localStorage and are edited on another screen; re-read
+  // when the register regains focus so a change lands without a reload.
+  useEffect(() => {
+    const refresh = () => setReceiptCfg(readReceiptSettings());
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
   }, []);
 
   /* ── Invoice a credit customer (pay later) ───────────────────── */
@@ -461,6 +475,13 @@ export default function POSPage() {
       cashierName:   session && session !== 'loading' ? session.cashierName : null,
       supplierId:    currentSupplier?.id ?? null,   // this register's store (dashboard attribution)
       notes:         notesParts.length ? notesParts.join(' | ') : null,
+      // An over-the-counter sale is DONE the moment it's paid — the goods have
+      // already been handed over, so there is nothing to fulfil later. Leaving
+      // it 'pending' made every POS sale look like outstanding work.
+      status:        'completed',
+      // ...and nobody needs alerting about a sale the cashier just rang up in
+      // front of them. Silences the in-app notification and the push.
+      silent:        true,
     };
 
     setPlacingOrder(true);
@@ -608,6 +629,10 @@ export default function POSPage() {
           discount={receiptData.discount}
           total={receiptData.total}
           autoPrint={posSettings.autoPrint}
+          showQr={receiptCfg.receiptQr}
+          merchantNumber={receiptCfg.merchantNumber}
+          headerLines={[receiptCfg.receiptHeader1, receiptCfg.receiptHeader2, receiptCfg.receiptHeader3]
+            .map(l => l.trim()).filter(Boolean)}
           onClose={() => { setShowReceipt(false); setReceiptData(null); }}
         />
         <div style={{ padding: '0 16px 80px' }}>
