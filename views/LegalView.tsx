@@ -5,6 +5,9 @@ import Header from '@/components/Header';
 import {
   SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_CURRENCY, SUBSCRIPTION_PERIOD_DAYS,
 } from '@/lib/subscription';
+import {
+  PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING,
+} from '@/lib/contactInfo';
 import { PLATFORM_FEE_RATE } from '@/lib/fees';
 
 /**
@@ -142,6 +145,42 @@ export default function LegalPage() {
               title="Contact us"
               sub="We're here to help — whether you're a shopper with a question about an order or a business wanting to sell on Hamar Mall."
             />
+
+            <section className="legal-card">
+              <h2>Call or WhatsApp</h2>
+              <p>The fastest way to reach us — same numbers for both.</p>
+              <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+                {PHONES.map(p => (
+                  <div key={p.e164} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <strong style={{ fontVariantNumeric: 'tabular-nums', minWidth: 150 }}>{p.display}</strong>
+                    <a className="btn btn-secondary btn-sm" href={telHref(p)}>📞 Call</a>
+                    <a
+                      className="btn btn-primary btn-sm"
+                      href={whatsappHref(p, WHATSAPP_GREETING)}
+                      target="_blank"
+                      // noreferrer with target=_blank: without it the new tab
+                      // can reach back through window.opener.
+                      rel="noopener noreferrer"
+                    >
+                      💬 WhatsApp
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="legal-card">
+              <h2>Follow us</h2>
+              <p>New stores, offers and updates.</p>
+              <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                {SOCIALS.map(s => (
+                  <a key={s.name} className="btn btn-secondary btn-sm"
+                    href={s.url} target="_blank" rel="noopener noreferrer">
+                    {s.icon} {s.name} — @{s.handle}
+                  </a>
+                ))}
+              </div>
+            </section>
 
             <section className="legal-card">
               <h2>Email</h2>

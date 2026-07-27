@@ -5,6 +5,9 @@ import { useAuth } from '@/context/AuthContext';
 import { useCashier } from '@/context/CashierContext';
 import { roleFor, isBusinessRoute } from '@/lib/roles';
 import type { Role } from '@/lib/roles';
+import {
+  PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING,
+} from '@/lib/contactInfo';
 
 /**
  * Site footer — the app had none, so the policy pages it links to were
@@ -102,6 +105,28 @@ export default function Footer() {
             Somalia&apos;s marketplace — shop from local stores, or run your own with a full point-of-sale
             and online storefront.
           </p>
+
+          {/* Contact + socials. Sitewide because "how do I reach a human"
+              is the question that decides whether someone buys. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+            {PHONES.map(p => (
+              <div key={p.e164} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: '.85rem' }}>
+                <a href={telHref(p)} style={{ fontVariantNumeric: 'tabular-nums' }}>📞 {p.display}</a>
+                <a href={whatsappHref(p, WHATSAPP_GREETING)} target="_blank" rel="noopener noreferrer">
+                  💬 WhatsApp
+                </a>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: '.85rem' }}>
+            {SOCIALS.map(s => (
+              <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+                aria-label={`${s.name} — @${s.handle}`}>
+                {s.icon} {s.name}
+              </a>
+            ))}
+          </div>
         </div>
 
         <nav className="site-footer-col" aria-label="Shopping links">

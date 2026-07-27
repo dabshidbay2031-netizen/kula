@@ -6,6 +6,8 @@
  * needs an absolute URL (Open Graph images, canonicals, the sitemap) reads it
  * from here, so there is exactly one place to change on launch.
  */
+import { PHONES, SOCIAL_URLS, SUPPORT_EMAIL } from '@/lib/contactInfo';
+
 export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hamarmall.com'
 ).replace(/\/$/, '');
@@ -46,6 +48,8 @@ export const OG_IMAGE = `${SITE_URL}/icons/icon-512.png`;
  * ld+json"> in the root layout.
  */
 export function siteJsonLd() {
+  // Phone + social profiles come from lib/contactInfo so the footer, the
+  // contact page and this schema can never drift apart.
   return {
     '@context': 'https://schema.org',
     '@graph': [
@@ -62,6 +66,18 @@ export function siteJsonLd() {
           addressLocality: 'Mogadishu',
           addressCountry: 'SO',
         },
+        email: SUPPORT_EMAIL,
+        telephone: PHONES.map(p => `+${p.e164}`),
+        // `sameAs` is how Google links this site to the Facebook and TikTok
+        // accounts — without it they're treated as unrelated strangers.
+        sameAs: SOCIAL_URLS,
+        contactPoint: PHONES.map(p => ({
+          '@type': 'ContactPoint',
+          telephone: `+${p.e164}`,
+          contactType: 'customer service',
+          areaServed: 'SO',
+          availableLanguage: ['so', 'en'],
+        })),
       },
       {
         '@type': 'WebSite',
@@ -90,6 +106,9 @@ export function siteJsonLd() {
         areaServed: { '@type': 'Country', name: 'Somalia' },
         currenciesAccepted: 'USD',
         paymentAccepted: 'Cash, EVC Plus, ZAAD, SAHAL, eDahab, Premier Wallet',
+        telephone: `+${PHONES[0].e164}`,
+        email: SUPPORT_EMAIL,
+        sameAs: SOCIAL_URLS,
       },
     ],
   };
