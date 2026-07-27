@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from '@/lib/hashRouter';
 import Header from '@/components/Header';
 import { authHeaders } from '@/lib/clientAuth';
+import { pollFetch, invalidatePoll } from '@/lib/pollFetch';
 import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
 import { useStoreActor } from '@/lib/useStoreActor';
@@ -93,27 +94,31 @@ export default function OrdersPage() {
    * more, so a long-running store simply lost access to its own older history.
    * `append` walks further back; `X-Has-More` tells us whether to keep offering.
    */
-  const fetchPage = useCallback(async (offset: number) => {
+  const fetchPage = useCallback(async (offset: number, force = false) => {
     const base = activeTab === 'store' && storeId != null
       ? `/api/orders?supplierId=${storeId}`
       : user ? `/api/orders?userId=${user.id}` : null;
     if (!base) return null;
     const url = `${base}&limit=${PAGE_SIZE}&offset=${offset}`;
     // Orders carry customer PII — the API requires the caller's JWT.
-    const res = await fetch(url, { cache: 'no-store', headers: await authHeaders() });
+    // Conditional: a poll that finds nothing new returns 304 and we leave the
+    // list untouched, so the screen doesn't re-render or lose scroll position.
+    const res = await pollFetch<Order[]>(url, { headers: await authHeaders() }, { force });
     if (!res.ok) throw new Error('request failed');
-    const data = await res.json();
+    if (!res.changed) return null;
     return {
-      rows:    Array.isArray(data) ? (data as Order[]) : [],
-      hasMore: res.headers.get('X-Has-More') === '1',
+      rows:    Array.isArray(res.data) ? res.data : [],
+      hasMore: res.headers?.get('X-Has-More') === '1',
     };
   }, [user, activeTab, storeId]);
 
   const loadOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const page = await fetchPage(0);
-      if (!page) { setOrders([]); setHasMore(false); if (!silent) setLoading(false); return; }
+      // A foreground load always wants fresh data; a background poll is happy
+      // with "nothing changed".
+      const page = await fetchPage(0, !silent);
+      if (page === null) { setError(false); if (!silent) setLoading(false); return; }
       setOrders(page.rows);
       setHasMore(page.hasMore);
       setError(false);
@@ -129,7 +134,7 @@ export default function OrdersPage() {
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
     try {
-      const page = await fetchPage(orders.length);
+      const page = await fetchPage(orders.length, true);
       if (page) {
         // De-dupe: a new order arriving mid-scroll would otherwise shift the
         // window and repeat a row across pages.
@@ -154,6 +159,10 @@ export default function OrdersPage() {
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     setStatusEditing(orderId);
+    // Our own write changes the payload, so the next poll would fetch it
+    // anyway — dropping the validator just makes it land without a round of
+    // "not modified" first.
+    invalidatePoll('/api/orders');
     const res = await fetch(`/api/orders/${orderId}`, {
       method: 'PATCH',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { errMsg } from '@/lib/apiHelpers';
+import { errMsg, jsonWithEtag } from '@/lib/apiHelpers';
 import { rateLimit, clientIp } from '@/lib/rateLimit';
 import { getAuthUser, isAdminUser, ownsStoreOrAdmin, requireSupplierAccess } from '@/lib/apiAuth';
 import { pingRealtime, runAfterResponse } from '@/lib/realtimeServer';
@@ -53,7 +53,11 @@ const MAX_PAGE = 500;
 function pageParams(sp: URLSearchParams): { limit: number; offset: number } {
   const rawLimit = parseInt(sp.get('limit') ?? '', 10);
   const rawOff   = parseInt(sp.get('offset') ?? '', 10);
-  const limit  = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_PAGE) : 100;
+  // The DEFAULT must stay at the old cap. Dashboards call this with no limit
+  // and aggregate everything they get back — defaulting to a smaller page
+  // silently truncated their KPIs, charts and PDF totals to the newest 100
+  // orders. Only a caller that explicitly pages (OrdersView) asks for less.
+  const limit  = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_PAGE) : MAX_PAGE;
   const offset = Number.isFinite(rawOff) && rawOff > 0 ? rawOff : 0;
   return { limit, offset };
 }
@@ -184,8 +188,13 @@ export async function GET(req: Request) {
         .range(offset, offset + limit - 1);
       if (error) throw error;
       const rows = (orderData ?? []).map(o => mapOrder(o as Record<string, unknown>));
-      return NextResponse.json(rows, {
-        headers: { 'X-Has-More': rows.length === limit ? '1' : '0' },
+      // ETag: these screens poll every 30s. Without a conditional response the
+      // whole order list crosses the wire again each time even when nothing
+      // changed — expensive on a mobile connection, and it forced the client
+      // to replace its state and re-render for no reason.
+      return jsonWithEtag(req, rows, {
+        'X-Has-More':    rows.length === limit ? '1' : '0',
+        'Cache-Control': 'private, no-cache',
       });
     } catch (e) {
       // NEVER return [] here. An empty array with HTTP 200 makes a server
@@ -221,8 +230,9 @@ export async function GET(req: Request) {
     const { data, error } = await query;
     if (error) throw error;
     const rows = (data ?? []).map(mapOrder);
-    return NextResponse.json(rows, {
-      headers: { 'X-Has-More': rows.length === limit ? '1' : '0' },
+    return jsonWithEtag(req, rows, {
+      'X-Has-More':    rows.length === limit ? '1' : '0',
+      'Cache-Control': 'private, no-cache',
     });
   } catch (e) {
     // Same rule as above: a failure must not masquerade as "no orders".

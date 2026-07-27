@@ -6,7 +6,7 @@
     "consoleErrors": [],
     "pageErrors": [],
     "failedReqs": [],
-    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart District All Mogadishu All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚 Books 📦 Other 🏆 Best Sellers qalimo $1.00 HP Laptop - Xirmo Cusub $320.00 qalimo $1.00 🛒 All Products 3 items -98% qalimo 🏪 Sokow Sambusa ★ 0 (0) $1.00 $50.00 VAT incl.",
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart District All Mogadishu Wadajir All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚 Books 📦 Other 🏆 Best Sellers HP Laptop - Xirmo Cusub $320.00 qalimo $1.00 qalimo $1.00 qalimo $1.00 🛒 All Products 4 items -98% qalimo 🏪 the business 📍 Wadajir",
     "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\home.png"
   },
   {
@@ -26,7 +26,7 @@
     "consoleErrors": [],
     "pageErrors": [],
     "failedReqs": [],
-    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚 Books 📦 Other HP Laptop - Xirmo Cusub 🏪 the business ★ 0 (0) $320.00 +5% VAT + Add to Cart -98% qalimo 🏪 Sokow Sambusa ★ 0 (0) $1.00 $50.00 VAT incl. + Add to Cart -98% qalimo 🏪 polo ★ 0 (0)",
+    "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart District All Mogadishu Wadajir All 📱 Electronics 👕 Clothes 🏠 Home 🍎 Food 🩺 Health ⚽ Sports 💊 Medicine 💄 Cosmetics 🏗️ Construction 🪑 Furniture 🚗 Automotive 📚 Books 📦 Other HP Laptop - Xirmo Cusub 🏪 the business 📍 Wadajir ★ 0 (0) $320.00 +5% VAT + Add to Cart -98% qalimo 🏪 Sokow Sambusa ★ 0 (0) $1.00 $50.00 VAT incl.",
     "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\search.png"
   },
   {
@@ -145,11 +145,7 @@
     "status": "ok",
     "consoleErrors": [],
     "pageErrors": [],
-    "failedReqs": [
-      "GET http://localhost:3000/api/notifications :: net::ERR_ABORTED",
-      "GET http://localhost:3000/api/products :: net::ERR_ABORTED",
-      "GET http://localhost:3000/api/suppliers :: net::ERR_ABORTED"
-    ],
+    "failedReqs": [],
     "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart Nothing to check out This shop has no items in your cart Browse Products Cart (0 items) ✕ 🛒 Cart is empty Add products to get started",
     "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\checkout.png"
   },
@@ -159,7 +155,11 @@
     "status": "ok",
     "consoleErrors": [],
     "pageErrors": [],
-    "failedReqs": [],
+    "failedReqs": [
+      "GET http://localhost:3000/api/products :: net::ERR_ABORTED",
+      "GET http://localhost:3000/api/suppliers :: net::ERR_ABORTED",
+      "GET http://localhost:3000/api/notifications :: net::ERR_ABORTED"
+    ],
     "preview": "Hamar Mall Explore Wishlist Alerts Settings Login AI Assistant Cart ← Back LEGAL Privacy Policy What Hamar Mall collects, how we use it, and the choices you have. Last updated: July 2026 1. What we collect Account details (name, email, phone), profile and store information, orders and transaction history, messages you send, optional delivery location (GPS) you choose to share, and basic devi",
     "shot": "C:\\Users\\ruwey\\Downloads\\mogarenta\\mogarenta-next\\review-shots\\privacy.png"
   },

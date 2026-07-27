@@ -7,6 +7,7 @@ import ErrorState from '@/components/ErrorState';
 import { useStoreActor } from '@/lib/useStoreActor';
 import { useApp } from '@/context/AppContext';
 import { authHeaders } from '@/lib/clientAuth';
+import { pollFetch } from '@/lib/pollFetch';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import { useRealtimePing } from '@/lib/useRealtimePing';
 import OnlinePaymentsWallet from '@/components/OnlinePaymentsWallet';
@@ -43,6 +44,15 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 };
 
 
+/** One claim row from /api/business-products. */
+interface BpRow {
+  isActive?:    boolean;
+  product?:     Product | null;
+  customPrice?: number;
+  stockQty?:    number;
+  moq?:         number;
+}
+
 export default function BusinessDashboardView() {
   // Owner OR a staff cashier with the 'dashboard' privilege operating the store.
   const actor = useStoreActor();
@@ -66,17 +76,23 @@ export default function BusinessDashboardView() {
       // at ITS OWN price/stock (custom_price / stock_qty). Owned catalog rows
       // are merged in below from the global product list.
       // The orders endpoint carries customer PII → needs the caller's JWT.
+      // Conditional polling: the 30s refresh sends If-None-Match, so an
+      // unchanged dashboard costs a 304 with no body and — crucially — no
+      // setState, so the KPIs, chart and tables don't re-render for nothing.
+      const hdrs = await authHeaders();
       const [bpRes, oRes] = await Promise.all([
-        fetch(`/api/business-products?supplierId=${supplierId}`, { cache: 'no-store' }),
-        fetch(`/api/orders?supplierId=${supplierId}`, { cache: 'no-store', headers: await authHeaders() }),
+        pollFetch<BpRow[]>(`/api/business-products?supplierId=${supplierId}`, { headers: hdrs }, { force: !silent }),
+        pollFetch<Order[]>(`/api/orders?supplierId=${supplierId}`, { headers: hdrs }, { force: !silent }),
       ]);
       if (!bpRes.ok || !oRes.ok) throw new Error('request failed');
-      const [bp, o] = await Promise.all([bpRes.json(), oRes.json()]);
+      // Nothing moved since the last poll — leave the screen exactly as it is.
+      if (!bpRes.changed && !oRes.changed) { setError(false); if (!silent) setLoaded(true); return; }
+      const bp = bpRes.data, o = oRes.data;
       setError(false);
       if (Array.isArray(bp)) {
         const claimed = bp
-          .filter((row: { isActive?: boolean; product?: Product | null }) => row.isActive && row.product)
-          .map((row: { customPrice?: number; stockQty?: number; moq?: number; product: Product }) => ({
+          .filter((row): row is BpRow & { product: Product } => Boolean(row.isActive && row.product))
+          .map(row => ({
             ...row.product,
             price: Number(row.customPrice ?? row.product.price),
             // This business's cost is what it pays the wholesaler — i.e. the

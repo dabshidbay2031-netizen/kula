@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { requireStaff, canAccessStore, requireSupplierAccess } from '@/lib/apiAuth';
-import { errMsg, isMissingTableError } from '@/lib/apiHelpers';
+import { errMsg, isMissingTableError, jsonWithEtag } from '@/lib/apiHelpers';
 import { pingRealtime } from '@/lib/realtimeServer';
 
 function mapProduct(p: Record<string, unknown>) {
@@ -88,7 +88,10 @@ export async function GET(req: Request) {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return NextResponse.json(data.map(r => mapBP(r as Record<string, unknown>)));
+    // ETag: the dashboard polls this every 30s alongside orders. A 304 keeps
+    // the payload off the wire and stops the client re-rendering unchanged data.
+    return jsonWithEtag(req, data.map(r => mapBP(r as Record<string, unknown>)),
+      { 'Cache-Control': 'private, no-cache' });
   } catch (e) {
     if (isMissingTableError(e)) {
       // Table doesn't exist yet — run migration.sql
