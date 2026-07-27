@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { Link, useRouter } from '@/lib/hashRouter';
 import { useAuth } from '@/context/AuthContext';
@@ -43,7 +43,17 @@ export default function SettingsPage() {
   const { user, accountType, currentSupplier, signOut } = useAuth();
   const { toast } = useApp();
   const [s, setS] = useState<Settings>(DEFAULTS);
-  const loadedRef = useRef(false);
+  /**
+   * Has the saved blob been READ INTO state yet?
+   *
+   * This has to be STATE, not a ref. Effects all run in the same commit, so a
+   * ref set by the load effect is already true when the save effect runs — but
+   * `s` is still DEFAULTS at that point, so the save wrote empty strings over
+   * the merchant number and header lines every single time the screen mounted.
+   * As state it stays false for that first commit and only flips on the next
+   * render, once `s` actually holds the loaded values.
+   */
+  const [loaded, setLoaded] = useState(false);
 
   /* Push notification state */
   const [pushState, setPushState] = useState<'unsupported' | 'off' | 'on' | 'busy'>('unsupported');
@@ -67,7 +77,7 @@ export default function SettingsPage() {
         });
       }
     } catch {}
-    loadedRef.current = true;
+    setLoaded(true);
   }, []);
 
   /* Detect current push subscription */
@@ -95,13 +105,13 @@ export default function SettingsPage() {
 
   /* Every change saves itself — no "Save" button to forget. */
   useEffect(() => {
-    if (!loadedRef.current) return;
+    if (!loaded) return;      // never write before the load has landed
     try {
       const raw  = localStorage.getItem(STORAGE_KEY);
       const prev = raw ? JSON.parse(raw) : {};
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...prev, ...s }));
     } catch {}
-  }, [s]);
+  }, [s, loaded]);
 
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     setS(prev => ({ ...prev, [k]: v }));
