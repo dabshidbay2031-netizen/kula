@@ -9,6 +9,8 @@ import {
   PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING,
 } from '@/lib/contactInfo';
 import { PLATFORM_FEE_RATE } from '@/lib/fees';
+import SharedBrandMark from '@/components/BrandMark';
+import SocialIcon from '@/components/SocialIcon';
 
 /**
  * The site's information pages — Privacy, Terms, Refunds, About and Contact —
@@ -25,14 +27,9 @@ const BIZ = `$${SUBSCRIPTION_PRICES.business.toFixed(2)}`;
 const SUP = `$${SUBSCRIPTION_PRICES.supplier.toFixed(2)}`;
 const FEE_PCT = `${Math.round(PLATFORM_FEE_RATE * 100)}%`;
 
-/* Small inline brand mark — matches the one used in the footer. */
+/* The shared brand mark, at the size the legal hero uses. */
 function BrandMark() {
-  return (
-    <svg viewBox="0 0 28 28" fill="none" width="22" height="22" aria-hidden="true">
-      <rect width="28" height="28" rx="8" fill="currentColor" opacity=".18" />
-      <path d="M7 10h14M7 14h14M7 18h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
+  return <SharedBrandMark size={22} />;
 }
 
 /* Reusable hero header — gradient banner with the mark, an eyebrow, the title,
@@ -175,8 +172,9 @@ export default function LegalPage() {
               <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
                 {SOCIALS.map(s => (
                   <a key={s.name} className="btn btn-secondary btn-sm"
-                    href={s.url} target="_blank" rel="noopener noreferrer">
-                    {s.icon} {s.name} — @{s.handle}
+                    href={s.url} target="_blank" rel="noopener noreferrer"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <SocialIcon social={s} /> {s.name} — @{s.handle}
                   </a>
                 ))}
               </div>

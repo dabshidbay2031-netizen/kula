@@ -11,6 +11,7 @@ import { cashierCanAccess } from '@/lib/cashierPrivileges';
 import { useIsAdmin } from '@/lib/useIsAdmin';
 import { useChatUnread } from '@/lib/useChatUnread';
 import { openAssistant } from '@/lib/assistant';
+import BrandMark from '@/components/BrandMark';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -203,10 +204,7 @@ export default function Sidebar() {
         <div className="sidebar-logo">
           <Link href="/" className="sidebar-logo-link">
             <div className="sidebar-logo-icon">
-              <svg viewBox="0 0 28 28" fill="none">
-                <rect width="28" height="28" rx="8" fill="currentColor" opacity=".15"/>
-                <path d="M7 10h14M7 14h14M7 18h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
+              <BrandMark size={32} />
             </div>
             <span className="sidebar-logo-text">Hamar Mall</span>
           </Link>

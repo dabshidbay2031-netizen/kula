@@ -106,7 +106,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor:   '#4F46E5',
+  themeColor:   '#1257E5',
   width:        'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -124,7 +124,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="dns-prefetch" href="https://knnrmdkzoicjuuaaownb.supabase.co" />
         {/* Android adaptive icon + Windows tile colour. */}
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="msapplication-TileColor" content="#4F46E5" />
+        <meta name="msapplication-TileColor" content="#1257E5" />
         <meta name="msapplication-TileImage" content="/icons/icon-192.png" />
         {/* Structured data: Organization, WebSite (with a SearchAction so
             Google can render a search box) and OnlineStore. This is one of

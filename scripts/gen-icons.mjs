@@ -19,7 +19,7 @@ const master   = fs.readFileSync(path.join(ICONS, 'icon.svg'), 'utf8');
 const maskable = fs.readFileSync(path.join(ICONS, 'icon-maskable.svg'), 'utf8');
 
 /** iOS refuses transparency on the home screen — it composites onto black. */
-const OPAQUE_BG = '#4F46E5';
+const OPAQUE_BG = '#1257E5';
 
 const TARGETS = [
   // Browser tab / bookmarks

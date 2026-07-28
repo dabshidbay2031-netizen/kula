@@ -8,6 +8,8 @@ import type { Role } from '@/lib/roles';
 import {
   PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING,
 } from '@/lib/contactInfo';
+import BrandMark from '@/components/BrandMark';
+import SocialIcon from '@/components/SocialIcon';
 
 /**
  * Site footer — the app had none, so the policy pages it links to were
@@ -95,10 +97,7 @@ export default function Footer() {
       <div className="site-footer-inner">
         <div className="site-footer-brand">
           <div className="site-footer-logo">
-            <svg viewBox="0 0 28 28" fill="none" width="26" height="26" aria-hidden="true">
-              <rect width="28" height="28" rx="8" fill="currentColor" opacity=".15" />
-              <path d="M7 10h14M7 14h14M7 18h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+            <BrandMark size={26} />
             <span>Hamar Mall</span>
           </div>
           <p className="site-footer-tagline">
@@ -119,11 +118,12 @@ export default function Footer() {
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: '.85rem' }}>
+          <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: '.85rem' }}>
             {SOCIALS.map(s => (
               <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
-                aria-label={`${s.name} — @${s.handle}`}>
-                {s.icon} {s.name}
+                aria-label={`${s.name} — @${s.handle}`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <SocialIcon social={s} /> {s.name}
               </a>
             ))}
           </div>

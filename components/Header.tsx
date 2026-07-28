@@ -10,6 +10,7 @@ import { roleFor, isBusinessRoute } from '@/lib/roles';
 import { cashierCanAccess } from '@/lib/cashierPrivileges';
 import { useIsAdmin } from '@/lib/useIsAdmin';
 import { openAssistant } from '@/lib/assistant';
+import BrandMark from '@/components/BrandMark';
 
 interface HeaderProps {
   searchQuery?: string;
@@ -195,10 +196,7 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
         </button>
 
         <Link href="/" className="header-logo">
-          <svg className="logo-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="28" height="28" rx="8" fill="currentColor" opacity=".15"/>
-            <path d="M7 10h14M7 14h14M7 18h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
+          <BrandMark className="logo-icon" />
           Hamar Mall
         </Link>
 
@@ -249,10 +247,7 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
       >
         <div className="mobile-menu-head">
           <span className="header-logo">
-            <svg viewBox="0 0 28 28" fill="none" width="26" height="26" xmlns="http://www.w3.org/2000/svg">
-              <rect width="28" height="28" rx="8" fill="currentColor" opacity=".15"/>
-              <path d="M7 10h14M7 14h14M7 18h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
+            <BrandMark size={26} />
             Hamar Mall
           </span>
           <button className="mobile-menu-close" aria-label="Close menu" onClick={() => setMenuOpen(false)}>

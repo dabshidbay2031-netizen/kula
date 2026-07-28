@@ -1,10 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#4F46E5"/>
-  <rect x="128" y="210" width="256" height="210" rx="20" fill="white"/>
-  <path d="M198 210 L198 178 Q198 128 256 128 Q314 128 314 178 L314 210"
-        fill="none" stroke="white" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="188" y="280" width="136" height="14" rx="7" fill="#4F46E5" opacity="0.4"/>
-  <rect x="188" y="314" width="96" height="14" rx="7" fill="#4F46E5" opacity="0.4"/>
-  <circle cx="222" cy="414" r="14" fill="#4F46E5" opacity="0.3"/>
-  <circle cx="290" cy="414" r="14" fill="#4F46E5" opacity="0.3"/>
+  <!--
+    Hamar Mall app icon — the padlock brand mark.
+
+    The three bars are CUT OUT of the lock face with a mask rather than painted
+    over it, so they show the gradient behind and stay in register at every
+    size. Painting them as flat shapes meant picking one blue that only matched
+    the background at a single point of the gradient.
+
+    PNG/ICO variants are generated from this file: node scripts/gen-icons.mjs
+  -->
+  <defs>
+    <linearGradient id="hm-bg" x1="0" y1="0" x2=".35" y2="1">
+      <stop offset="0" stop-color="#1B6DF0"/>
+      <stop offset="1" stop-color="#0A38BE"/>
+    </linearGradient>
+    <mask id="hm-bars">
+      <rect x="88" y="196" width="336" height="284" rx="34" fill="#fff"/>
+      <rect x="152" y="276" width="208" height="28" rx="14" fill="#000"/>
+      <rect x="152" y="334" width="208" height="28" rx="14" fill="#000"/>
+      <rect x="152" y="392" width="134" height="28" rx="14" fill="#000"/>
+    </mask>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#hm-bg)"/>
+
+  <!-- Shackle first; the body then covers where its legs end. -->
+  <path d="M198 210V126a58 58 0 0 1 116 0v84"
+        fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round"/>
+  <rect x="88" y="196" width="336" height="284" rx="34" fill="#fff" mask="url(#hm-bars)"/>
 </svg>
