@@ -180,11 +180,11 @@ export default function Receipt({
                   )
                 )}
                 <div style={{ fontSize:16, fontWeight:700, marginTop:4 }}>{businessName || 'Hamar Mall'}</div>
-                {merchantNumber && (
-                  <div style={{ fontSize:11, color:'#555', marginTop:2 }}>Merchant: {merchantNumber}</div>
-                )}
                 <div style={{ fontSize:11, letterSpacing:2, textTransform:'uppercase', color:'#555', marginTop:2 }}>Receipt</div>
-                <div style={{ fontSize:11, marginTop:8, color:'#555' }}>
+                {merchantNumber && (
+                  <div style={{ fontSize:11, color:'#555', marginTop:8 }}>Merchant: {merchantNumber}</div>
+                )}
+                <div style={{ fontSize:11, marginTop: merchantNumber ? 0 : 8, color:'#555' }}>
                   {dateStr} · {timeStr}
                 </div>
                 <div style={{ fontSize:11, color:'#555' }}>Order: <strong>{orderId}</strong></div>
