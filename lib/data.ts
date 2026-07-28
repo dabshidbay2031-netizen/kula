@@ -142,6 +142,22 @@ export function getCategoryById(id: string): Category | undefined {
 export function getSubcategories(categoryId: string): SubCategory[] {
   return SUBCATEGORIES[categoryId] ?? [];
 }
+/**
+ * The categories actually represented in a set of products, in the canonical
+ * CATEGORIES order.
+ *
+ * For filter chips over a *fixed* set of products — a single store's shelf,
+ * not the marketplace. Listing all thirteen there means most are dead: a
+ * grocery store scrolls past Automotive and Construction, and tapping either
+ * filters the grid to nothing.
+ *
+ * Unknown category ids on a product are dropped rather than invented, so a
+ * typo in imported data can't add a chip that no picker can produce.
+ */
+export function stockedCategories(items: { category: string }[]): Category[] {
+  const stocked = new Set(items.map(i => i.category));
+  return CATEGORIES.filter(c => stocked.has(c.id));
+}
 export function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1,3), 16);
   const g = parseInt(hex.slice(3,5), 16);

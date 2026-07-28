@@ -8,7 +8,7 @@ import { useApp } from '@/context/AppContext';
 import { useAuth } from '@/context/AuthContext';
 import { authHeaders } from '@/lib/clientAuth';
 import { useMyProductIds } from '@/lib/useMyProductIds';
-import { CATEGORIES } from '@/lib/data';
+import { stockedCategories } from '@/lib/data';
 import { enqueueOrder, queueCount, onQueueChange } from '@/lib/offlineQueue';
 import { useCashier } from '@/context/CashierContext';
 import { readReceiptAutoPrintSetting, readReceiptSettings, type ReceiptSettings } from '@/lib/receiptSettings';
@@ -193,10 +193,37 @@ export default function POSPage() {
   // This store's products (owned + claimed); the whole catalog for admins.
   const { ids: myIds, scoped: myScoped } = useMyProductIds();
 
+  // A register only ever shows its OWN store's products — never the whole
+  // catalog (only an admin/non-store account, myScoped === false, sees all).
+  const myProducts = useMemo(
+    () => (myScoped ? products.filter(p => myIds.has(p.id)) : products),
+    [products, myIds, myScoped],
+  );
+
+  /**
+   * Only the categories this register actually stocks. Derived from the
+   * store's products BEFORE the search filter is applied — otherwise chips
+   * would appear and vanish as the cashier types.
+   */
+  const availableCategories = useMemo(() => stockedCategories(myProducts), [myProducts]);
+
+  /**
+   * A selected category can empty out mid-shift — last unit sold, product
+   * deleted from Inventory. Its chip disappears but `activeCategory` still
+   * points at it, leaving an empty grid and no lit chip to explain why, so
+   * fall back to All.
+   *
+   * Skipped while the catalog is empty: that's the initial load, not a store
+   * that stocks nothing, and resetting there would drop the cashier's choice
+   * every time products refresh.
+   */
+  useEffect(() => {
+    if (myProducts.length === 0 || activeCategory === 'all') return;
+    if (!availableCategories.some(c => c.id === activeCategory)) setActiveCategory('all');
+  }, [myProducts, availableCategories, activeCategory]);
+
   const filtered = useMemo(() => {
-    // A register only ever shows its OWN store's products — never the whole
-    // catalog (only an admin/non-store account, myScoped === false, sees all).
-    let list = myScoped ? products.filter(p => myIds.has(p.id)) : products;
+    let list = myProducts;
     if (activeCategory !== 'all')
       list = list.filter(p => p.category === activeCategory);
     if (search.trim()) {
@@ -208,7 +235,7 @@ export default function POSPage() {
       );
     }
     return list;
-  }, [products, search, activeCategory, myIds, myScoped]);
+  }, [myProducts, search, activeCategory]);
 
   const posTotal = useMemo(
     () => posCart.reduce((s, i) => s + (products.find(x => x.id === i.id)?.price ?? 0) * i.qty, 0),
@@ -732,17 +759,21 @@ export default function POSPage() {
         </button>
       </div>
 
-      <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-        <div className="chips-row">
-          <button className={`chip ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>All</button>
-          {CATEGORIES.map(cat => (
-            <button key={cat.id} className={`chip ${activeCategory === cat.id ? 'active' : ''}`}
-              onClick={() => setActiveCategory(cat.id)}>
-              {cat.icon} {cat.name}
-            </button>
-          ))}
+      {/* Nothing to filter with a single category — "All" and that one chip
+          select the same products — so the row only earns its space at two. */}
+      {availableCategories.length > 1 && (
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+          <div className="chips-row">
+            <button className={`chip ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>All</button>
+            {availableCategories.map(cat => (
+              <button key={cat.id} className={`chip ${activeCategory === cat.id ? 'active' : ''}`}
+                onClick={() => setActiveCategory(cat.id)}>
+                {cat.icon} {cat.name}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Inline cart summary */}
       {posCart.length > 0 && (
