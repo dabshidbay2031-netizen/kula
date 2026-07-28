@@ -88,10 +88,10 @@ export default function CheckoutPage() {
   const [district,      setDistrict]      = useState('');
   const [deliveryNotes, setDeliveryNotes] = useState('');
 
-  // Payment method — Cash (pay on delivery/pickup) or Sifalo Pay wallet.
-  const [payMethod, setPayMethod] = useState<'cash' | 'sifalo'>('cash');
-  // Contact phone for cash orders (delivery/pickup coordination).
-  const [phone, setPhone] = useState('');
+  // Payment method — SifaloPay only. Cash on delivery/pickup is not offered
+  // online (it skips the platform fee and can't be verified before fulfillment);
+  // cash stays available in-store via POS.
+  const payMethod: 'sifalo' = 'sifalo';
 
   // Sifalo Pay (on OUR page) — wallet type + number. No redirect to Sifalo.
   const [sifaloGateway, setSifaloGateway] = useState<SifaloGateway>('waafi');
@@ -128,10 +128,10 @@ export default function CheckoutPage() {
   const feeAmount   = feeBreakdown.buyerFee;
   const total       = Math.max(0, subtotal + vatAmount + feeAmount - discountAmt);
 
-  // Pre-fill name + phone from profile
+  // Pre-fill name + wallet number from profile
   useEffect(() => {
     if (user?.displayName) setName(user.displayName);
-    if (user?.phoneNumber) setPhone(user.phoneNumber.replace(/\D/g, '').replace(/^252/, ''));
+    if (user?.phoneNumber) setSifaloAccount(user.phoneNumber.replace(/\D/g, '').replace(/^252/, ''));
   }, [user]);
 
   // Keep the global payment method in sync with the picker (used on the receipt).
@@ -200,16 +200,15 @@ export default function CheckoutPage() {
     return parts.join(' — ');
   };
 
-  /* ── Place the order on THIS page.
-     For Sifalo this runs only AFTER a confirmed on-page charge (sifaloSid set);
-     for Cash it records a pay-on-delivery order with no charge. ── */
+  /* ── Place the order on THIS page — runs only AFTER a confirmed
+     on-page Sifalo charge (sifaloSid set). ── */
   const placeOrderNow = async (sifaloSid: string | null) => {
     // One key per checkout screen. A double-tapped button, or a retry after a
     // network blip, replays the SAME key — the server then returns the order it
     // already created instead of charging the customer twice. Disabling the
     // button client-side never covered the blip-and-retry case.
     const idempotencyKey = checkoutKeyRef.current;
-    const contactPhone = payMethod === 'sifalo' ? `+252${sifaloAccount}` : `+252${phone}`;
+    const contactPhone = `+252${sifaloAccount}`;
     const notes = [deliveryNote(), sifaloSid ? `Sifalo SID: ${sifaloSid}` : null].filter(Boolean).join(' | ') || null;
 
     // The server is the source of truth: it prices the items from the DB,
@@ -249,16 +248,7 @@ export default function CheckoutPage() {
     shopCart.forEach(i => removeFromCart(i.id));
     reloadProducts().catch(() => {});
     setPaymentState('success');
-    toast(payMethod === 'cash' ? 'Order placed!' : 'Payment successful!', 'success');
-  };
-
-  /* ── Place a CASH (pay-on-delivery/pickup) order — no gateway charge. ── */
-  const placeCashOrder = async () => {
-    if (!name.trim()) { toast('Please enter your name', 'error'); return; }
-    if (fulfillment === 'delivery' && !district) { toast('Please choose your delivery district', 'error'); return; }
-    if (phone.length < 7) { toast('Please enter a valid phone number', 'error'); return; }
-    setPaymentState('pending');
-    await placeOrderNow(null);
+    toast('Payment successful!', 'success');
   };
 
   /* ── Pay with Sifalo, ON OUR PAGE (direct wallet debit) ──────────────
@@ -304,12 +294,10 @@ export default function CheckoutPage() {
         <div className="payment-pending">
           <div className="spinner" />
           <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 8 }}>
-            {payMethod === 'cash' ? 'Placing Order…' : 'Processing Payment…'}
+            Processing Payment…
           </div>
           <div style={{ color: 'var(--text-muted)', fontSize: '.88rem' }}>
-            {payMethod === 'cash'
-              ? 'Confirming your order — one moment.'
-              : 'Confirming with Sifalo Pay — approve the request on your phone.'}
+            Confirming with Sifalo Pay — approve the request on your phone.
           </div>
         </div>
       </div>
@@ -327,15 +315,12 @@ export default function CheckoutPage() {
               <path d="m8.5 12.5 2.5 2.5 5-6"/>
             </svg>
           </div>
-          <div className="success-title">{paymentMethod === 'cash' ? 'Order Placed!' : 'Payment Successful!'}</div>
-          <div className="success-subtitle">
-            {paymentMethod === 'cash' ? 'Pay with cash on delivery/pickup' : 'Your order has been placed'}
-          </div>
+          <div className="success-title">Payment Successful!</div>
+          <div className="success-subtitle">Your order has been placed</div>
           <div className="success-order-box">
             <div className="success-order-id">{lastOrderId || 'Order Confirmed'}</div>
             <div className="success-order-total">
-              {paymentMethod === 'cash' ? 'Total (pay on delivery): ' : 'Total paid: '}
-              <strong>${receiptTotal.toFixed(2)}</strong>
+              Total paid: <strong>${receiptTotal.toFixed(2)}</strong>
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
@@ -552,61 +537,12 @@ export default function CheckoutPage() {
             <label className="form-label">Full Name</label>
             <input className="form-input" placeholder="Enter your name" value={name} onChange={e => setName(e.target.value)} />
           </div>
-          {payMethod === 'cash' && (
-            <div className="form-group">
-              <label className="form-label">Phone Number</label>
-              <div className="waafi-input-wrap">
-                <span className="waafi-prefix">+252</span>
-                <input
-                  className="waafi-phone"
-                  placeholder="61 XXX XXXX"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
-                  maxLength={9}
-                />
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Payment — Cash on delivery/pickup, or Sifalo Pay on our own page */}
+        {/* Payment — Sifalo Pay on our own page. Cash is not offered online. */}
         <div className="checkout-section">
           <div className="checkout-section-title">Payment</div>
 
-          {/* Method picker (like the POS) */}
-          <div className="fulfill-toggle" style={{ marginBottom: 12 }}>
-            <button
-              type="button"
-              className={`fulfill-opt ${payMethod === 'cash' ? 'active' : ''}`}
-              onClick={() => setPayMethod('cash')}
-            >
-              💵 Cash
-            </button>
-            <button
-              type="button"
-              className={`fulfill-opt ${payMethod === 'sifalo' ? 'active' : ''}`}
-              onClick={() => setPayMethod('sifalo')}
-            >
-              📱 SifaloPay
-            </button>
-          </div>
-
-          {payMethod === 'cash' ? (
-            <div className="sifalo-box">
-              <div className="sifalo-head">
-                <span style={{ fontWeight: 800, fontSize: '1rem' }}>💵 Cash</span>
-                <span className="sifalo-amount">${total.toFixed(2)}</span>
-              </div>
-              <div className="sifalo-sub">
-                {fulfillment === 'pickup'
-                  ? 'Pay with cash when you collect your order at the store.'
-                  : 'Pay with cash to the rider when your order is delivered.'}
-              </div>
-              <button className="btn btn-primary btn-full btn-lg" style={{ marginTop: 12 }} onClick={placeCashOrder}>
-                Place Order · ${total.toFixed(2)}
-              </button>
-            </div>
-          ) : (
           <div className="sifalo-box">
             <div className="sifalo-head">
               <span className="sifalo-logo">Sifalo<span>Pay</span></span>
@@ -641,7 +577,6 @@ export default function CheckoutPage() {
               🇸🇴 Pay ${total.toFixed(2)}
             </button>
           </div>
-          )}
         </div>
       </div>
     </div>

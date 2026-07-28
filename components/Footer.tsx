@@ -149,8 +149,11 @@ export default function Footer() {
 
       <div className="site-footer-bottom">
         <span>© {new Date().getFullYear()} Hamar Mall. All rights reserved.</span>
+        {/* Online checkout is wallet-only — this used to list Cash too, which
+            stopped being true when cash was removed from the checkout page.
+            Cash still exists in-store, but this footer is the marketplace's. */}
         <span className="site-footer-pay">
-          Pay with EVC Plus · ZAAD · SAHAL · eDahab · Premier Wallet · Cash
+          Pay with EVC Plus · ZAAD · SAHAL · eDahab · Premier Wallet
         </span>
       </div>
     </footer>
