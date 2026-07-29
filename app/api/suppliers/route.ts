@@ -62,6 +62,8 @@ function mapSupplier(s: Record<string, unknown>) {
     /* Admin-granted free trial (migration_v4_6) — unlocks the dashboard
        without payment, and never counts as a payment. */
     trialEndsAt:            (s.trial_ends_at as string | undefined) ?? null,
+    /* Opt-in 14-day trial: null until the seller clicks "start free trial". */
+    selfTrialStartedAt:     (s.self_trial_started_at as string | undefined) ?? null,
     /* Field-agent vetting: an agent earns nothing until an admin approves. */
     agentApprovedAt:        (s.agent_approved_at as string | undefined) ?? null,
     agentRejectedAt:        (s.agent_rejected_at as string | undefined) ?? null,

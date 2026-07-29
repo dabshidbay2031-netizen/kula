@@ -32,6 +32,9 @@ interface SupplierRow {
   subscription_period_end?: string | null;
   subscription_plan: string | null;
   subscription_amount: number | null;
+  /** Trial inputs — optional, both columns may be absent on an older DB. */
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
 }
 
 const VALID_GATEWAYS: ReadonlySet<string> = new Set<SifaloGateway>(['waafi', 'edahab', 'pbwallet']);
@@ -79,6 +82,10 @@ function stateFrom(row: SupplierRow) {
     subscriptionRefundedAt: row.subscription_refunded_at,
     subscriptionPeriodEnd:  row.subscription_period_end ?? null,
     monthlyBillingEnabled:  hasPeriodColumn(row),
+    // Both trial inputs, or this route would price and lock a store the rest
+    // of the app considers to be mid-trial.
+    trialStartedAt:         row.trial_started_at ?? null,
+    trialEndsAt:            row.trial_ends_at ?? null,
   });
 }
 
@@ -160,8 +167,15 @@ export async function POST(req: Request) {
 
   // Renewing before the month runs out extends it; a lapsed or refunded
   // subscription starts a fresh 30 days from today.
-  const renewal  = !current.locked && current.periodEnd != null;
-  const periodEnd = nextPeriodEnd(renewal ? current.periodEnd : null, now);
+  const renewal = !current.locked && current.periodEnd != null;
+  // Paying during the free trial must not throw the rest of it away — the
+  // month starts when the trial ends, not today. Without this, activating on
+  // day 2 of 14 quietly costs the seller the other 12 days, which would make
+  // waiting until the last day the only sensible move.
+  const anchor = renewal ? current.periodEnd
+    : current.onTrial ? current.trialEndsAt
+    : null;
+  const periodEnd = nextPeriodEnd(anchor, now);
 
   const update: Record<string, unknown> = {
     subscription_paid_at:     paidAt,

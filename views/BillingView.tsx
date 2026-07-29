@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { authHeaders } from '@/lib/clientAuth';
 import {
   deriveSubscription, planLabel, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_CURRENCY,
-  SUBSCRIPTION_PERIOD_DAYS, SUBSCRIPTION_NOTICE_DAYS,
+  SUBSCRIPTION_PERIOD_DAYS, SUBSCRIPTION_NOTICE_DAYS, SIGNUP_TRIAL_DAYS,
 } from '@/lib/subscription';
 import type { SifaloGateway } from '@/lib/types';
 
@@ -47,6 +47,9 @@ export default function BillingView() {
   const [notice,  setNotice]    = useState('');
   const [events,  setEvents]    = useState<Receipt[]>([]);
   const [showRenew, setShowRenew] = useState(false);
+  /* Revealed by "Pay now" on the choice screen. Backing out of the form just
+     clears this, so the free-trial option is still waiting for them. */
+  const [showPayNow, setShowPayNow] = useState(false);
 
   // Subscription state is derived from the live supplier record in context.
   const sub = useMemo(() => deriveSubscription(currentSupplier), [currentSupplier]);
@@ -108,6 +111,24 @@ export default function BillingView() {
     finally { setBusy(false); }
   }
 
+  /** Claim the one-time free trial. Eligibility is re-checked server-side. */
+  async function startTrial() {
+    if (!supplierId) return;
+    setError(''); setNotice(''); setBusy(true);
+    try {
+      const res = await fetch('/api/subscriptions/trial', {
+        method: 'POST',
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ supplierId }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.error || 'Could not start your free trial.'); return; }
+      setNotice(`Your ${d.days ?? SIGNUP_TRIAL_DAYS}-day free trial has started — your store is open.`);
+      await refreshAccount().catch(() => {});
+    } catch { setError('Network error. Please try again.'); }
+    finally { setBusy(false); }
+  }
+
   async function refund() {
     if (!supplierId) return;
     if (!confirm(`Request a full refund of ${money(sub.price)}? Your store access will be locked until you pay again.`)) return;
@@ -126,7 +147,13 @@ export default function BillingView() {
     finally { setBusy(false); }
   }
 
-  const badge = sub.status === 'active'     ? { t: 'Active',             c: 'var(--success, #16a34a)' }
+  // A trial that has never been paid for: the dashboard is open, but nothing
+  // has been bought — neither the "active subscription" nor the "renew" copy
+  // below is true of it, so it gets its own branch rather than a reworded one.
+  const onFreeTrial = sub.onTrial && !sub.paidAt;
+
+  const badge = onFreeTrial                 ? { t: 'Free trial',          c: 'var(--primary, #4F46E5)' }
+              : sub.status === 'active'     ? { t: 'Active',              c: 'var(--success, #16a34a)' }
               : sub.status === 'refundable' ? { t: 'Active · money-back', c: 'var(--success, #16a34a)' }
               : sub.status === 'expired'    ? { t: 'Expired · renew now', c: 'var(--danger, #dc2626)' }
               : sub.status === 'refunded'   ? { t: 'Refunded · locked',   c: 'var(--danger, #dc2626)' }
@@ -183,6 +210,15 @@ export default function BillingView() {
                 </div>
               </div>
             )}
+            {onFreeTrial && (
+              <div>
+                <div style={{ color: 'var(--text-muted)' }}>Free trial ends</div>
+                <div style={{ fontWeight: 600 }}>
+                  {fmtDate(sub.trialEndsAt)}
+                  <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {sub.daysLeftInTrial}d left</span>
+                </div>
+              </div>
+            )}
             {sub.refundable && <div><div style={{ color: 'var(--text-muted)' }}>Money-back until</div><div style={{ fontWeight: 600 }}>{fmtDate(sub.refundDeadline)}</div></div>}
           </div>
         </div>
@@ -197,8 +233,37 @@ export default function BillingView() {
         {error  && <div className="auth-error" style={{ marginTop: 14 }}>{error}</div>}
         {notice && <div className="card" style={{ marginTop: 14, padding: 14, borderRadius: 12, background: 'var(--success-bg, #dcfce7)', color: 'var(--success-text, #166534)', fontSize: '.9rem' }}>{notice}</div>}
 
-        {/* ── LOCKED (never paid / expired / refunded): pay to unlock ── */}
-        {sub.locked ? (
+        {/* ── NEW STORE: choose a free trial, or pay now ──
+            Shown only while the offer is still open (never paid, never
+            trialled). Backing out of the payment form leaves this in place, so
+            the trial is still there for them. */}
+        {sub.locked && sub.trialAvailable && (
+          <div className="card" style={{ padding: 18, marginTop: 14, borderRadius: 14 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Start selling today</div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.9rem', marginTop: 0 }}>
+              Pick one to unlock your dashboard. The free trial is a one-time offer
+              for new stores — once you pay, your monthly subscription starts and
+              the trial no longer applies.
+            </p>
+            <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+              <button className="btn btn-primary btn-full btn-lg" onClick={startTrial} disabled={busy}>
+                {busy ? <><span className="btn-spinner" /> Starting…</>
+                      : `🎁 Start ${SIGNUP_TRIAL_DAYS}-day free trial`}
+              </button>
+              <button className="btn btn-secondary btn-full" onClick={() => setShowPayNow(true)} disabled={busy}>
+                Pay {money(sub.price)} now &amp; start my subscription
+              </button>
+            </div>
+            <p style={{ fontSize: '.78rem', color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
+              No card needed for the trial. You can pay any time before it ends.
+            </p>
+          </div>
+        )}
+
+        {/* ── LOCKED (never paid / expired / refunded): pay to unlock ──
+            While the trial offer is open this stays hidden until they choose
+            "Pay now", so the two options aren't competing on one screen. */}
+        {sub.locked && (!sub.trialAvailable || showPayNow) ? (
           <div className="card" style={{ padding: 18, marginTop: 14, borderRadius: 14 }}>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>
               {sub.status === 'refunded' ? 'Reactivate your store'
@@ -218,6 +283,32 @@ export default function BillingView() {
             <button className="btn btn-primary btn-full btn-lg" onClick={pay} disabled={busy || !account.trim()}>
               {busy ? <><span className="btn-spinner" /> Processing…</>
                     : `Pay ${money(sub.price)} & ${sub.status === 'expired' ? 'renew' : 'activate'} →`}
+            </button>
+            <p style={{ fontSize: '.78rem', color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
+              By paying you agree to the <Link href="/terms">Terms of Use</Link>. Secured by Sifalo Pay.
+            </p>
+          </div>
+        ) : onFreeTrial ? (
+          /* ── FREE TRIAL: open now, pay whenever they like before it ends ── */
+          <div className="card" style={{ padding: 18, marginTop: 14, borderRadius: 14 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+              Free trial · {sub.daysLeftInTrial} day{sub.daysLeftInTrial === 1 ? '' : 's'} left
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.9rem', marginTop: 0 }}>
+              Your dashboard is open until <strong>{fmtDate(sub.trialEndsAt)}</strong> — no payment needed
+              to sell in the meantime. After that it locks until the {planLabel(sub.plan)} fee
+              of <strong>{money(sub.price)}</strong> is paid.
+            </p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '.9rem' }}>
+              You can pay now if you prefer: your {SUBSCRIPTION_PERIOD_DAYS} days start
+              on <strong>{fmtDate(sub.trialEndsAt)}</strong>, not today, so paying early costs you
+              none of the trial.
+            </p>
+
+            {payForm}
+
+            <button className="btn btn-primary btn-full btn-lg" onClick={pay} disabled={busy || !account.trim()}>
+              {busy ? <><span className="btn-spinner" /> Processing…</> : `Pay ${money(sub.price)} & activate →`}
             </button>
             <p style={{ fontSize: '.78rem', color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
               By paying you agree to the <Link href="/terms">Terms of Use</Link>. Secured by Sifalo Pay.

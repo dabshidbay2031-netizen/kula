@@ -14,6 +14,14 @@
 export const SUBSCRIPTION_TRIAL_DAYS  = 7;               // money-back window
 export const SUBSCRIPTION_PERIOD_DAYS = 30;              // one paid month
 /**
+ * Free trial every business and supplier gets from the day its store is
+ * created — no admin action, no payment up front. Selling works normally for
+ * two weeks; when they run out the dashboard locks until the first month is
+ * paid. Paying during the trial is allowed and does not forfeit the days left
+ * (see `nextPeriodEnd`), so there is no reason to wait until the last day.
+ */
+export const SIGNUP_TRIAL_DAYS = 14;
+/**
  * How early to start warning that the month is running out. Five days was too
  * late for a market paying by mobile wallet — a seller who is travelling or
  * short of funds needs more than a long weekend before the dashboard locks.
@@ -26,6 +34,19 @@ export type BillablePlan       = 'supplier' | 'business';
 export type SubscriptionStatus = 'unpaid' | 'trial' | 'refundable' | 'active' | 'expired' | 'refunded';
 
 const DAY_MS = 86_400_000;
+
+/**
+ * The later of two ISO instants, ignoring nulls. An unparseable value is
+ * dropped rather than compared: NaN loses every comparison, so returning it
+ * would let one bad timestamp cancel a perfectly good trial.
+ */
+function laterOf(a: string | null, b: string | null): string | null {
+  const ta = a ? new Date(a).getTime() : NaN;
+  const tb = b ? new Date(b).getTime() : NaN;
+  if (!Number.isFinite(ta)) return Number.isFinite(tb) ? b : null;
+  if (!Number.isFinite(tb)) return a;
+  return ta >= tb ? a : b;
+}
 
 /** End of the billing period a payment made at `paidAt` buys. */
 export function periodEndFor(paidAt: string | Date): string {
@@ -68,6 +89,24 @@ export interface SubscriptionInput {
    */
   trialEndsAt?:             string | null;
   /**
+   * When this account's own trial clock started — the row's `trial_started_at`,
+   * which the schema defaults to the moment the store is created, so every
+   * seller has one without a backfill.
+   *
+   * Null when that column is missing on an older DB. That grants NO signup
+   * trial rather than an endless one: an account then behaves exactly as it
+   * did before trials existed, which is the failure that loses nothing.
+   */
+  trialStartedAt?:          string | null;
+  /**
+   * When the seller CLICKED "start my free trial". Null = they never did.
+   *
+   * Deliberately separate from trial_started_at, which is NOT NULL DEFAULT
+   * NOW() and so can never mean "hasn't chosen yet". The trial is opt-in: a
+   * new store stays locked until the seller either starts this or pays.
+   */
+  selfTrialStartedAt?:      string | null;
+  /**
    * False when the DB has no subscription columns yet (migration_subscriptions.sql
    * not run). Without this, an absent column reads as "never paid" and would lock
    * every existing seller out. Absent/undefined = assume enabled.
@@ -100,6 +139,14 @@ export interface SubscriptionState {
   onTrial:         boolean;
   trialEndsAt:     string | null;
   daysLeftInTrial: number;
+  /**
+   * May this seller START the 14-day free trial right now?
+   *
+   * True only for a store that has NEVER paid and has never taken the trial.
+   * One payment closes it permanently — so paying, cancelling and trialling
+   * again is impossible — and taking it once closes it too.
+   */
+  trialAvailable:  boolean;
 }
 
 /** Pure: turn stored subscription fields into a UI/enforcement state. */
@@ -118,7 +165,7 @@ export function deriveSubscription(
       status: 'active', locked: false, refundable: false,
       paidAt: null, refundedAt: null, refundDeadline: null, daysLeftToRefund: 0,
       periodEnd: null, daysLeftInPeriod: 0, renewalDue: false,
-      onTrial: false, trialEndsAt: null, daysLeftInTrial: 0,
+      onTrial: false, trialEndsAt: null, daysLeftInTrial: 0, trialAvailable: false,
     };
   }
 
@@ -129,20 +176,39 @@ export function deriveSubscription(
       status: 'active', locked: false, refundable: false,
       paidAt: null, refundedAt: null, refundDeadline: null, daysLeftToRefund: 0,
       periodEnd: null, daysLeftInPeriod: 0, renewalDue: false,
-      onTrial: false, trialEndsAt: null, daysLeftInTrial: 0,
+      onTrial: false, trialEndsAt: null, daysLeftInTrial: 0, trialAvailable: false,
     };
   }
 
-  // ── Admin-granted free trial ──
+  const paidAt     = s?.subscriptionPaidAt ?? null;
+  const refundedAt = s?.subscriptionRefundedAt ?? null;
+
+  // ── Free trial ──
   // Checked BEFORE the paid state so a trial can rescue a store that has
   // lapsed or was never paid — that is the whole point of granting one.
-  const trialEnds = s?.trialEndsAt ?? null;
+  //
+  // Two sources, whichever runs longer: the automatic signup trial every new
+  // seller gets, and an admin grant on top.
+  //
+  // The signup trial applies only while the account has NEVER transacted.
+  // After a payment the paid month governs; after a refund the seller asked to
+  // be locked out ("locked until you pay again"), and a still-running signup
+  // trial would silently overrule that. An admin grant keeps its full rescue
+  // power in both cases — that is a deliberate decision by a human.
+  // The timestamp is checked before use: `new Date('nonsense').toISOString()`
+  // THROWS rather than yielding NaN, and this runs in TrialGate on every route
+  // change — one malformed row would take down every page, not just billing.
+  // The signup trial runs from the moment it was CLAIMED, not from signup.
+  const signupStart = s?.selfTrialStartedAt ? new Date(s.selfTrialStartedAt).getTime() : NaN;
+  const signupTrialEnd = Number.isFinite(signupStart) && !paidAt && !refundedAt
+    ? new Date(signupStart + SIGNUP_TRIAL_DAYS * DAY_MS).toISOString()
+    : null;
+  const trialEnds   = laterOf(signupTrialEnd, s?.trialEndsAt ?? null);
   const trialLeftMs = trialEnds ? new Date(trialEnds).getTime() - now.getTime() : 0;
   const onTrial     = trialLeftMs > 0;
   const trialDays   = onTrial ? Math.ceil(trialLeftMs / DAY_MS) : 0;
-
-  const paidAt     = s?.subscriptionPaidAt ?? null;
-  const refundedAt = s?.subscriptionRefundedAt ?? null;
+  // Offered once, to a store that has never paid and never claimed it.
+  const trialAvailable = !paidAt && !s?.selfTrialStartedAt;
 
   // Refunded, or never paid → locked, unless a free trial is running.
   if (refundedAt || !paidAt) {
@@ -152,7 +218,7 @@ export function deriveSubscription(
       locked: !onTrial, refundable: false,
       paidAt, refundedAt, refundDeadline: null, daysLeftToRefund: 0,
       periodEnd: null, daysLeftInPeriod: 0, renewalDue: !onTrial,
-      onTrial, trialEndsAt: trialEnds, daysLeftInTrial: trialDays,
+      onTrial, trialEndsAt: trialEnds, daysLeftInTrial: trialDays, trialAvailable,
     };
   }
 
@@ -184,7 +250,7 @@ export function deriveSubscription(
     periodEnd,
     daysLeftInPeriod: daysInPeriod,
     renewalDue: expired && !onTrial,
-    onTrial, trialEndsAt: trialEnds, daysLeftInTrial: trialDays,
+    onTrial, trialEndsAt: trialEnds, daysLeftInTrial: trialDays, trialAvailable,
   };
 }
 

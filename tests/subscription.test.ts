@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   deriveSubscription, planForAccountType, priceForAccountType, nextPeriodEnd, periodEndFor,
-  SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_PERIOD_DAYS,
+  SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_PERIOD_DAYS, SIGNUP_TRIAL_DAYS,
 } from '@/lib/subscription';
 
 const DAY = 86_400_000;
@@ -220,5 +220,157 @@ describe('admin-granted free trial', () => {
       { accountType: 'business', subscriptionPaidAt: ago(10), subscriptionPeriodEnd: inDays(20) }, NOW);
     expect(s.onTrial).toBe(false);
     expect(s.status).toBe('active');
+  });
+});
+
+describe('opt-in signup free trial', () => {
+  /** A store that has CLAIMED the trial `daysAgo` days ago. */
+  const newStore = (over: Record<string, unknown> = {}) => deriveSubscription(
+    { accountType: 'business', subscriptionPaidAt: null, selfTrialStartedAt: ago(0), ...over }, NOW);
+
+  it('a brand-new store is LOCKED until it chooses — trial or pay', () => {
+    // The whole point of opt-in: signing up alone does not open the dashboard.
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: null, selfTrialStartedAt: null }, NOW);
+    expect(s.locked).toBe(true);
+    expect(s.onTrial).toBe(false);
+    expect(s.trialAvailable).toBe(true);   // ...but the offer is there
+  });
+
+  it('starts the two weeks when the seller claims it', () => {
+    const s = newStore();
+    expect(s.onTrial).toBe(true);
+    expect(s.locked).toBe(false);
+    expect(s.status).toBe('trial');
+    expect(s.daysLeftInTrial).toBe(SIGNUP_TRIAL_DAYS);
+    expect(s.trialAvailable).toBe(false);  // can't be claimed twice
+  });
+
+  it('gives suppliers the same trial, at the supplier price', () => {
+    const s = newStore({ accountType: 'supplier' });
+    expect(s.onTrial).toBe(true);
+    expect(s.locked).toBe(false);
+    expect(s.price).toBe(24.99);
+  });
+
+  it('still counts down partway through', () => {
+    expect(newStore({ selfTrialStartedAt: ago(10) }).daysLeftInTrial).toBe(4);
+  });
+
+  it('is never offered again once the store has paid', () => {
+    // Pay → cancel → trial again must be impossible.
+    const paid = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(2), selfTrialStartedAt: null }, NOW);
+    expect(paid.trialAvailable).toBe(false);
+
+    const refunded = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: ago(40),
+        subscriptionRefundedAt: ago(1), selfTrialStartedAt: null }, NOW);
+    expect(refunded.trialAvailable).toBe(false);
+  });
+
+  it('is never offered again once it has been used', () => {
+    expect(newStore({ selfTrialStartedAt: ago(90) }).trialAvailable).toBe(false);
+  });
+
+  it('locks the moment the trial runs out', () => {
+    const s = newStore({ selfTrialStartedAt: ago(SIGNUP_TRIAL_DAYS) });
+    expect(s.onTrial).toBe(false);
+    expect(s.locked).toBe(true);
+    expect(s.status).toBe('unpaid');
+    expect(s.renewalDue).toBe(true);
+  });
+
+  it('stays locked well after the trial', () => {
+    expect(newStore({ selfTrialStartedAt: ago(90) }).locked).toBe(true);
+  });
+
+  it('never grants a trial to accounts that do not pay at all', () => {
+    for (const accountType of ['agent', 'user']) {
+      const s = newStore({ accountType });
+      expect(s.onTrial).toBe(false);
+      expect(s.requiresSubscription).toBe(false);
+      expect(s.locked).toBe(false);
+    }
+  });
+
+  it('is not a payment — no money-back window opens', () => {
+    const s = newStore();
+    expect(s.refundable).toBe(false);
+    expect(s.paidAt).toBeNull();
+    expect(s.periodEnd).toBeNull();
+  });
+
+  // Once money has changed hands the paid month governs, or a seller who paid
+  // on day 1 would look like they were still on trial for another 13 days.
+  it('defers to the paid month once the store has paid', () => {
+    const s = newStore({ subscriptionPaidAt: ago(1), subscriptionPeriodEnd: inDays(29) });
+    expect(s.onTrial).toBe(false);
+    expect(s.status).toBe('refundable');
+    expect(s.locked).toBe(false);
+  });
+
+  // "Your store access will be locked until you pay again" is what the refund
+  // button promises; a leftover signup trial would quietly break that promise.
+  it('does not reopen a refunded store that is still inside its first two weeks', () => {
+    const s = newStore({ subscriptionPaidAt: ago(2), subscriptionRefundedAt: ago(1) });
+    expect(s.onTrial).toBe(false);
+    expect(s.locked).toBe(true);
+    expect(s.status).toBe('refunded');
+  });
+
+  it('takes whichever trial runs longer when an admin also grants one', () => {
+    // Admin grant reaches further than the signup trial.
+    const granted = newStore({ selfTrialStartedAt: ago(13), trialEndsAt: inDays(30) });
+    expect(granted.daysLeftInTrial).toBe(30);
+
+    // Signup trial reaches further than a short admin grant.
+    const signup = newStore({ selfTrialStartedAt: ago(0), trialEndsAt: inDays(2) });
+    expect(signup.daysLeftInTrial).toBe(SIGNUP_TRIAL_DAYS);
+  });
+
+  it('lets an admin grant still rescue a lapsed or refunded store', () => {
+    const s = newStore({
+      selfTrialStartedAt: ago(90), subscriptionPaidAt: ago(60),
+      subscriptionRefundedAt: ago(59), trialEndsAt: inDays(5),
+    });
+    expect(s.onTrial).toBe(true);
+    expect(s.locked).toBe(false);
+  });
+
+  // An older DB without the column must not silently hand out endless access.
+  it('grants no signup trial when the column is missing', () => {
+    const s = deriveSubscription(
+      { accountType: 'business', subscriptionPaidAt: null, trialStartedAt: null }, NOW);
+    expect(s.onTrial).toBe(false);
+    expect(s.locked).toBe(true);
+  });
+
+  it('treats an unparseable timestamp as no trial, not an endless one', () => {
+    const s = newStore({ selfTrialStartedAt: 'not-a-date' });
+    expect(s.onTrial).toBe(false);
+    expect(s.locked).toBe(true);
+  });
+
+  // billingEnabled === false means the billing columns are not deployed; that
+  // must keep overriding everything, trial included.
+  it('never locks while billing is not deployed', () => {
+    const s = newStore({ selfTrialStartedAt: ago(90), billingEnabled: false });
+    expect(s.locked).toBe(false);
+  });
+});
+
+describe('paying during the trial keeps the remaining days', () => {
+  it('starts the paid month at the trial end, not today', () => {
+    const trialEnd = inDays(9);
+    // What the API passes to nextPeriodEnd when a trial is still running.
+    const end = nextPeriodEnd(trialEnd, NOW);
+    expect(new Date(end).getTime())
+      .toBe(new Date(trialEnd).getTime() + SUBSCRIPTION_PERIOD_DAYS * DAY);
+  });
+
+  it('does not shorten the month for someone who waits until the trial ends', () => {
+    const end = nextPeriodEnd(null, NOW);
+    expect(new Date(end).getTime()).toBe(NOW.getTime() + SUBSCRIPTION_PERIOD_DAYS * DAY);
   });
 });

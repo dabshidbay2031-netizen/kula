@@ -476,6 +476,17 @@ export default function BusinessDashboardView() {
         </div>
       )}
 
+      {/* Trial countdown — the dashboard locks the moment the trial runs out,
+          and daysLeftInPeriod is 0 on a trial, so the renewal warning below
+          would never fire for a seller who has not paid yet. */}
+      {sub.onTrial && !sub.paidAt && (
+        <div className="card" style={{ margin: '0 16px 14px', padding: '11px 14px', borderRadius: 10, fontSize: '.85rem' }}>
+          🎁 Free trial — <strong>{sub.daysLeftInTrial} day{sub.daysLeftInTrial === 1 ? '' : 's'}</strong> left.
+          {' '}Your dashboard locks when it ends. <Link href="/billing">Pay now</Link> to keep it open —
+          {' '}your paid month starts when the trial finishes, so you lose none of it.
+        </div>
+      )}
+
       {/* Renewal warning — the dashboard locks when the paid month runs out. */}
       {!sub.locked && sub.daysLeftInPeriod > 0 && sub.daysLeftInPeriod <= SUBSCRIPTION_NOTICE_DAYS && (
         <div className="card" style={{ margin: '0 16px 14px', padding: '11px 14px', borderRadius: 10, fontSize: '.85rem' }}>

@@ -7,7 +7,13 @@ import type { SocialLink } from '@/lib/contactInfo';
  * the row of icons reads as one set and stays legible on both themes — a
  * fixed Facebook blue disappears against a dark footer.
  */
-export default function SocialIcon({ social, size = 16 }: { social: SocialLink; size?: number }) {
+export default function SocialIcon(
+  { social, path, size = 16 }: { social?: SocialLink; path?: string; size?: number },
+) {
+  // `path` lets non-social marks (WhatsApp) reuse the same rendering, so every
+  // brand glyph on the site is drawn one way.
+  const d = path ?? social?.path;
+  if (!d) return null;
   return (
     <svg
       viewBox="0 0 24 24"
@@ -18,7 +24,7 @@ export default function SocialIcon({ social, size = 16 }: { social: SocialLink; 
       xmlns="http://www.w3.org/2000/svg"
       style={{ flexShrink: 0 }}
     >
-      <path d={social.path} />
+      <path d={d} />
     </svg>
   );
 }

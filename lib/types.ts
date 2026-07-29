@@ -109,6 +109,9 @@ export interface Supplier {
   subscriptionPeriodEnd?:  string | null;   // end of the paid month
   /** Admin-granted free trial end. Unlocks access; never counts as a payment. */
   trialEndsAt?:            string | null;
+  /** Opt-in 14-day trial — null until the seller starts it. Once set (or once
+   *  they have paid) the offer is gone for good. */
+  selfTrialStartedAt?:     string | null;
   /** Agent vetting (agent accounts only) — unapproved agents earn nothing. */
   agentApprovedAt?:        string | null;
   agentRejectedAt?:        string | null;

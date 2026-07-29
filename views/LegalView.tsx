@@ -6,7 +6,7 @@ import {
   SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS, SUBSCRIPTION_CURRENCY, SUBSCRIPTION_PERIOD_DAYS,
 } from '@/lib/subscription';
 import {
-  PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING,
+  PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING, WHATSAPP_ICON_PATH,
 } from '@/lib/contactInfo';
 import { PLATFORM_FEE_RATE } from '@/lib/fees';
 import SharedBrandMark from '@/components/BrandMark';
@@ -159,7 +159,7 @@ export default function LegalPage() {
                       // can reach back through window.opener.
                       rel="noopener noreferrer"
                     >
-                      💬 WhatsApp
+                      <SocialIcon path={WHATSAPP_ICON_PATH} size={15} /> WhatsApp
                     </a>
                   </div>
                 ))}

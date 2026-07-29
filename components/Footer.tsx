@@ -6,7 +6,7 @@ import { useCashier } from '@/context/CashierContext';
 import { roleFor, isBusinessRoute } from '@/lib/roles';
 import type { Role } from '@/lib/roles';
 import {
-  PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING,
+  PHONES, SOCIALS, telHref, whatsappHref, WHATSAPP_GREETING, WHATSAPP_ICON_PATH,
 } from '@/lib/contactInfo';
 import BrandMark from '@/components/BrandMark';
 import SocialIcon from '@/components/SocialIcon';
@@ -111,8 +111,9 @@ export default function Footer() {
             {PHONES.map(p => (
               <div key={p.e164} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: '.85rem' }}>
                 <a href={telHref(p)} style={{ fontVariantNumeric: 'tabular-nums' }}>📞 {p.display}</a>
-                <a href={whatsappHref(p, WHATSAPP_GREETING)} target="_blank" rel="noopener noreferrer">
-                  💬 WhatsApp
+                <a href={whatsappHref(p, WHATSAPP_GREETING)} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <SocialIcon path={WHATSAPP_ICON_PATH} size={14} /> WhatsApp
                 </a>
               </div>
             ))}

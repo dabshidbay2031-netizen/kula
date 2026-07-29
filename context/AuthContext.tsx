@@ -318,11 +318,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /* ── Refresh account data ────────────────────────────────────── */
   const refreshAccount = async () => {
-    if (!user) return;
     cancelResolveRetry();
-    lastResolvedUid.current = null; // force re-resolve
+    // Read the session from Supabase rather than this component's `user`
+    // state. Signup calls refreshAccount the instant the store row is created,
+    // and at that point the auth event hasn't re-rendered the provider yet —
+    // so `user` is still null and an `if (!user) return` guard made the call a
+    // no-op. The account then stayed 'customer' and the new seller saw the
+    // shopper nav until they manually reloaded the page.
     const { data: { user: sbUser } } = await getSupabase().auth.getUser();
-    await resolveAccount(user.id, sbUser ?? undefined);
+    if (!sbUser) return;
+    activeUidRef.current   = sbUser.id;
+    lastResolvedUid.current = null;   // force a re-resolve
+    await resolveAccount(sbUser.id, sbUser);
   };
 
   /* Someone changed THIS store's row server-side (an admin ticking ✓ Verified,
