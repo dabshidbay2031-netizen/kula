@@ -75,6 +75,29 @@ const tbl: React.CSSProperties = { width:'100%', borderCollapse:'collapse' };
 const th:  React.CSSProperties = { textAlign:'left', padding:'10px 12px', fontSize:'.75rem', fontWeight:700, color:'var(--text-muted)', borderBottom:'1px solid var(--border)', textTransform:'uppercase', letterSpacing:.5, background:'var(--bg)' };
 const td:  React.CSSProperties = { padding:'10px 12px', fontSize:'.85rem', borderBottom:'1px solid var(--border)', verticalAlign:'middle' };
 
+/**
+ * A tinted callout that survives the dark theme.
+ *
+ * The banners here were hardcoded light-mode hex (#FEF3C7 on #92400E). The app
+ * has a real dark mode, where a solid pale-yellow card sits on a near-black
+ * page looking like a rendering fault. A translucent tint over --surface keeps
+ * the same meaning in both themes, and the text stays --text so it is always
+ * legible against whatever it lands on.
+ */
+function alertBox(tone: 'warning' | 'success' | 'danger' | 'info'): React.CSSProperties {
+  const rgb = tone === 'warning' ? '245,158,11'
+            : tone === 'success' ? '16,185,129'
+            : tone === 'danger'  ? '239,68,68'
+            :                      '6,182,212';
+  return {
+    background:   `rgba(${rgb},.12)`,
+    border:       `1px solid rgba(${rgb},.35)`,
+    borderRadius: 10,
+    padding:      '10px 14px',
+    color:        'var(--text)',
+  };
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════════ */
@@ -90,6 +113,7 @@ export default function AdminDashboard() {
 
   // Data
   const [stats,     setStats]     = useState<AdminStats | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [businesses,setBusinesses]= useState<Supplier[]>([]);
   const [products,  setProducts]  = useState<Product[]>([]);
   const [orders,    setOrders]    = useState<Order[]>([]);
@@ -226,30 +250,61 @@ export default function AdminDashboard() {
   }, [user?.id]);
 
   /* ── Load data ─────────────────────────────────────────────────── */
+  /**
+   * Fetch whatever the active tab needs.
+   *
+   * Every call used to be `setX(await r.json())` with a bare `catch {}`. Two
+   * things went wrong with that:
+   *
+   *   • a non-200 returns `{ error: "..." }`, and storing THAT made `stats`
+   *     truthy — so the overview rendered with `undefined` in every figure,
+   *     and a list endpoint returning an error object turned `businesses`
+   *     into a non-array that `.filter` would throw on.
+   *   • a network failure left the spinner turning for ever with no way back.
+   *
+   * Now a failure is surfaced with a Retry, and lists only ever receive arrays.
+   */
   const load = useCallback(async (t: Tab) => {
     setLoading(true);
+    setLoadError('');
+
+    const getJson = async (url: string, auth = true): Promise<unknown> => {
+      const res = await fetch(url, auth ? { headers: await authHeaders() } : undefined);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error || `Request failed (${res.status})`);
+      }
+      return res.json();
+    };
+    const asArray = <T,>(v: unknown): T[] => (Array.isArray(v) ? v as T[] : []);
+
     try {
       if (t === 'overview') {
-        const r = await fetch('/api/admin/stats', { headers: await authHeaders() }); setStats(await r.json());
+        setStats(await getJson('/api/admin/stats') as AdminStats);
       } else if (t === 'businesses') {
-        const r = await fetch('/api/suppliers');   setBusinesses(await r.json());
+        setBusinesses(asArray<Supplier>(await getJson('/api/suppliers', false)));
       } else if (t === 'products') {
         // Suppliers come too: the products list needs them for the "Business"
         // filter dropdown and the Supplier column. Without this the dropdown
         // is empty unless the Businesses tab happened to be opened first.
-        const [pr, sr] = await Promise.all([fetch('/api/products'), fetch('/api/suppliers')]);
-        setProducts(await pr.json());
-        setBusinesses(await sr.json());
+        const [p, sup] = await Promise.all([
+          getJson('/api/products', false),
+          getJson('/api/suppliers', false),
+        ]);
+        setProducts(asArray<Product>(p));
+        setBusinesses(asArray<Supplier>(sup));
       } else if (t === 'orders') {
-        const r = await fetch('/api/orders', { headers: await authHeaders() }); setOrders(await r.json());
+        setOrders(asArray<Order>(await getJson('/api/orders')));
       } else if (t === 'users') {
-        const r = await fetch('/api/admin/users', { headers: await authHeaders() }); setUsers(await r.json());
+        setUsers(asArray<AdminUser>(await getJson('/api/admin/users')));
       } else if (t === 'team') {
-        const r = await fetch('/api/admin/admins', { headers: await authHeaders() }); setAdmins(await r.json());
+        setAdmins(asArray<AdminEntry>(await getJson('/api/admin/admins')));
       } else if (t === 'storefront') {
-        const r = await fetch('/api/settings/hero'); setHero(await r.json());
+        setHero(await getJson('/api/settings/hero', false) as HeroBanner);
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Could not load this page.');
+    }
     setLoading(false);
   }, []);
 
@@ -295,6 +350,23 @@ export default function AdminDashboard() {
   /* ── Payout requests (admin desk) ──────────────────────────────── */
   const [payouts, setPayouts] = useState<AdminPayout[]>([]);
   const [payoutTotals, setPayoutTotals] = useState({ pending: 0, approved: 0, pendingCount: 0 });
+
+  /* Everything waiting on an admin, in one list. Only rows with a non-zero
+     count appear, so an empty queue genuinely means nothing to do. */
+  const todo = useMemo(() => ([
+    { icon:'📝', label:'Store setups awaiting review', count: reviewQueue.length,
+      go: () => setTab('review') },
+    ...(isAdmin ? [
+      { icon:'🧑‍💼', label:'Field agents awaiting approval', count: pendingAgents,
+        go: () => setTab('agents' as Tab) },
+      { icon:'💸', label:'Payout requests to decide', count: payoutTotals.pendingCount,
+        go: () => setTab('payouts' as Tab) },
+    ] : []),
+    { icon:'✅', label:'Verification requests', count: stats?.pendingVerifications ?? 0,
+      go: () => setTab('businesses') },
+  ].filter(i => i.count > 0)),
+  [reviewQueue.length, pendingAgents, payoutTotals.pendingCount, stats?.pendingVerifications, isAdmin]);
+
   const [payoutFilter, setPayoutFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [payoutNote, setPayoutNote] = useState<Record<number, string>>({});
   const [decidingId, setDecidingId] = useState<number | null>(null);
@@ -645,14 +717,23 @@ export default function AdminDashboard() {
 
       {/* View-only banner */}
       {!isAdmin && (
-        <div style={{ background:'#FEF3C722', border:'1px solid #F59E0B44', borderRadius:8, margin:'16px 16px 0', padding:'8px 14px', fontSize:'.82rem', color:'#92400E', display:'flex', alignItems:'center', gap:8 }}>
+        <div style={{ ...alertBox('warning'), margin:'16px 16px 0', fontSize:'.82rem', display:'flex', alignItems:'center', gap:8 }}>
           👁️ <strong>View-only mode.</strong>&nbsp;You can see all data but cannot make changes. Contact an Admin to get full access.
         </div>
       )}
 
       {/* Content */}
       <div style={{ padding:'16px', maxWidth:1200, margin:'0 auto' }}>
-        {loading && tab !== 'overview' ? (
+        {/* A failed load used to leave the overview spinning for ever and the
+            other tabs looking simply empty — indistinguishable from "no data".
+            Say what broke and offer the retry. */}
+        {loadError ? (
+          <div style={{ ...alertBox('danger'), display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+            <span aria-hidden="true">⚠️</span>
+            <span style={{ flex:1, fontSize:'.9rem' }}>{loadError}</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => load(tab)}>Retry</button>
+          </div>
+        ) : loading && tab !== 'overview' ? (
           <div style={{ display:'flex', justifyContent:'center', padding:60 }}>
             <div className="spinner" style={{ width:32, height:32 }} />
           </div>
@@ -688,9 +769,40 @@ export default function AdminDashboard() {
                         ? '✅ Seed and test data excluded — these are real figures.'
                         : '⚠️ Includes seed/test data. Run RUN-THIS-grants-and-seed-flags.sql to exclude it.'}
                     </div>
-                    {stats.pendingVerifications > 0 && (
-                      <div style={{ background:'#FEF3C7', border:'1px solid #F59E0B', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:'.88rem', color:'#92400E' }}>
-                        ⏳ <strong>{stats.pendingVerifications}</strong> verification request{stats.pendingVerifications > 1 ? 's' : ''} pending
+
+                    {/* ── Needs your attention ───────────────────────────
+                        The counts were only ever visible as little numbers on
+                        the tab bar, so work sat unnoticed unless someone
+                        happened to look up. This is the first thing on the
+                        page and every row jumps straight to the queue. */}
+                    {todo.length > 0 && (
+                      <div style={{ ...alertBox('warning'), marginBottom:18, padding:0, overflow:'hidden' }}>
+                        <div style={{ padding:'10px 14px', fontWeight:700, fontSize:'.88rem', borderBottom:'1px solid var(--border)' }}>
+                          ⏳ Needs your attention
+                        </div>
+                        {todo.map(item => (
+                          <button
+                            key={item.label}
+                            onClick={item.go}
+                            style={{
+                              display:'flex', alignItems:'center', gap:10, width:'100%',
+                              padding:'11px 14px', background:'none', border:'none',
+                              borderTop:'1px solid var(--border)', cursor:'pointer',
+                              textAlign:'left', font:'inherit', color:'var(--text)',
+                            }}
+                          >
+                            <span aria-hidden="true">{item.icon}</span>
+                            <span style={{ flex:1, fontSize:'.88rem' }}>{item.label}</span>
+                            <strong style={{ fontVariantNumeric:'tabular-nums' }}>{item.count}</strong>
+                            <span aria-hidden="true" style={{ color:'var(--text-muted)' }}>→</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {todo.length === 0 && (
+                      <div style={{ ...alertBox('success'), marginBottom:18, fontSize:'.88rem' }}>
+                        ✅ Nothing waiting — no reviews, agents, payouts or verifications pending.
                       </div>
                     )}
                     <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', overflow:'hidden' }}>
