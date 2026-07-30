@@ -40,7 +40,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, accountType, currentSupplier, signOut } = useAuth();
+  const { user, accountType, currentSupplier, accountResolving, accountError,
+          refreshAccount, signOut } = useAuth();
   const { toast } = useApp();
   const [s, setS] = useState<Settings>(DEFAULTS);
   /**
@@ -176,13 +177,26 @@ export default function SettingsPage() {
                     : '👤 Customer'}
                 </span>
               </div>
-              {currentSupplier && (
+              {/* Sellers always get a Store row. It used to render only when
+                  the store had loaded, so a seller whose store fetch was still
+                  running (or had failed) saw the section simply vanish — "no
+                  business in my profile settings" — with nothing to act on. */}
+              {(isSeller || accountType === 'agent') && (
                 <div className="sett-row">
                   <div className="sett-row-info">
                     <div className="sett-row-label">Store</div>
                     <div className="sett-row-sub">Shown on receipts and your storefront</div>
                   </div>
-                  <span className="sett-info-val">{currentSupplier.name}</span>
+                  {currentSupplier ? (
+                    <span className="sett-info-val">{currentSupplier.name}</span>
+                  ) : accountResolving && !accountError ? (
+                    <span className="sett-info-val" style={{ opacity: .6 }}>Loading…</span>
+                  ) : (
+                    <button className="btn btn-secondary btn-sm"
+                      onClick={() => { refreshAccount().catch(() => {}); }}>
+                      Couldn&apos;t load — retry
+                    </button>
+                  )}
                 </div>
               )}
               <div className="sett-row">

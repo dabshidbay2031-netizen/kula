@@ -98,6 +98,9 @@ export default function AppShell() {
   const [storeSlug, setStoreSlug] = useState('');
 
   useEffect(() => {
+    // React is running — stand the pre-hydration boot watchdog down.
+    (window as unknown as { __hmBoot?: () => void }).__hmBoot?.();
+
     const path = window.location.pathname.replace(/\/+$/, '') || '/';
 
     if (path === '/auth/callback') {

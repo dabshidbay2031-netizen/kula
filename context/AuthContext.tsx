@@ -24,6 +24,14 @@ interface AuthContextValue {
   currentProfile:  UserProfile | null;
   signOut:         () => Promise<void>;
   refreshAccount:  () => Promise<void>;
+  /** True while the account type is optimistic (from cache) and not yet
+   *  confirmed against the server — views can show a skeleton instead of an
+   *  empty business page. */
+  accountResolving: boolean;
+  /** Set when every lookup attempt failed. The role we're showing came from
+   *  cache, so a business page may be missing its store: views surface a
+   *  "couldn't load your store — retry" state instead of blank fields. */
+  accountError:    boolean;
   updateProfile:   (data: Partial<Pick<UserProfile, 'fullName' | 'phone' | 'avatar' | 'avatarUrl' | 'bio' | 'gender' | 'birthYear'>>) => Promise<void>;
   /* ── Field-agent "acting as store" ──────────────────────────────
      When a field agent is setting up a store they registered, they select it
@@ -38,36 +46,87 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/* ── Account-type cache ──────────────────────────────────────────────
-   Resolving the account type needs a network round-trip. Caching the last
-   resolved type per uid lets a refresh render the correct audience (business
-   vs customer nav, dashboards) *immediately* instead of flashing the default
-   'customer' role for a second while the fetch runs. */
+/* ── Account cache ───────────────────────────────────────────────────
+   Resolving the account needs a network round-trip. We cache the last resolved
+   ROW (not just the type) per uid so a reload renders the real store — name,
+   logo, location — immediately, then revalidates.
+
+   Caching only the *type* was a bug: a reloading business owner got
+   accountType 'business' with `currentSupplier` still null, so the Profile and
+   Settings screens rendered the business layout with every field blank ("I see
+   no business in my profile settings"), and stayed that way for good if the
+   revalidating fetch then failed. */
 const ACCOUNT_CACHE = 'mg_c_account';
-function readCachedAccount(): { uid: string; accountType: AccountType } | null {
+interface CachedAccount {
+  uid:         string;
+  accountType: AccountType;
+  supplier?:   Supplier | null;
+  profile?:    UserProfile | null;
+}
+function readCachedAccount(): CachedAccount | null {
   try {
     const raw = localStorage.getItem(ACCOUNT_CACHE);
-    return raw ? (JSON.parse(raw) as { uid: string; accountType: AccountType }) : null;
+    return raw ? (JSON.parse(raw) as CachedAccount) : null;
   } catch { return null; }
 }
-function writeCachedAccount(uid: string, accountType: AccountType) {
-  try { localStorage.setItem(ACCOUNT_CACHE, JSON.stringify({ uid, accountType })); } catch { /* storage full */ }
+function writeCachedAccount(entry: CachedAccount) {
+  try { localStorage.setItem(ACCOUNT_CACHE, JSON.stringify(entry)); } catch { /* storage full */ }
 }
 function clearCachedAccount() {
   try { localStorage.removeItem(ACCOUNT_CACHE); } catch { /* ignore */ }
 }
 
+/* Set by BOTH signup flows for as long as the account's store/profile row is
+   being created. See signupInFlight(). */
+export const SIGNUP_IN_FLIGHT_KEY = 'mogarenta_signup_in_flight';
+/** Legacy key, still written by the Google flow so old links keep working. */
+const OAUTH_PENDING_KEY = 'mogarenta_pending_oauth';
+
 /**
- * Is an OAuth signup still creating its store/profile right now?
+ * Is a signup still creating its store/profile row right now?
  *
- * True while we're sitting on /auth/callback, or while a pending-signup marker
- * is present. During that window "this user has no store" means "the callback
- * hasn't finished POSTing it", so nothing here may conclude they're a customer.
+ * True while we're sitting on /auth/callback, or while either signup marker is
+ * present. During that window "this user has no store" means "signup hasn't
+ * finished POSTing it", so nothing here may conclude they're a customer.
+ *
+ * The EMAIL flow used to set no marker at all, so the auto-create step below
+ * raced it: a brand-new Business signup was frequently stamped as a plain
+ * customer profile before its store row existed. That is the "I chose Business
+ * but got a personal account, with no error" report.
  */
-function oauthSignupInFlight(): boolean {
+function signupInFlight(): boolean {
   if (typeof window === 'undefined') return false;
   if (window.location.pathname.startsWith('/auth/callback')) return true;
-  try { return localStorage.getItem('mogarenta_pending_oauth') != null; } catch { return false; }
+  try {
+    return isFreshMarker(localStorage.getItem(SIGNUP_IN_FLIGHT_KEY), SIGNUP_IN_FLIGHT_KEY)
+        || isFreshMarker(localStorage.getItem(OAUTH_PENDING_KEY),   OAUTH_PENDING_KEY);
+  } catch { return false; }
+}
+
+/** How long a signup marker may block the auto-create step. Long enough for a
+ *  slow round trip to Google, short enough that an ABANDONED signup (tab closed
+ *  mid-flow) can't leave this browser permanently unable to create a profile. */
+const SIGNUP_MARKER_TTL_MS = 10 * 60 * 1000;
+
+/** True while the marker exists and is recent; a stale one is swept away. */
+function isFreshMarker(raw: string | null, key: string): boolean {
+  if (raw == null) return false;
+  // Markers carry `startedAt` (ms). Anything without one predates this change
+  // — honour it once, then let the TTL apply on the next write.
+  let startedAt = 0;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === 'number') startedAt = parsed;
+    else if (parsed && typeof parsed === 'object') {
+      startedAt = Number((parsed as { startedAt?: number }).startedAt) || 0;
+    }
+  } catch { /* plain string — no timestamp */ }
+
+  if (startedAt && Date.now() - startedAt > SIGNUP_MARKER_TTL_MS) {
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+    return false;
+  }
+  return true;
 }
 
 /* ── Mapper ──────────────────────────────────────────────────────── */
@@ -88,6 +147,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accountType,     setAccountType]     = useState<AccountType | null>(null);
   const [loading,         setLoading]         = useState(true);
   const [configError,     setConfigError]     = useState<string | null>(null);
+  // The role on screen is optimistic (cache) until a lookup confirms it.
+  const [accountResolving, setAccountResolving] = useState(false);
+  const [accountError,     setAccountError]     = useState(false);
   // A field agent's currently-selected store to set up (in-memory; a reload
   // drops back to the agent's own dashboard, which is fine).
   const [actingStore,     setActingStore]     = useState<Supplier | null>(null);
@@ -102,6 +164,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const activeUidRef    = useRef<string | null>(null);
   // Pending retry timer for an inconclusive (network-failed) resolve.
   const resolveTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic token for resolve attempts. Every await inside resolveAccount is
+  // a window in which a NEWER resolve (refreshAccount right after signup, a new
+  // auth event) can start and finish first. Without this, the older attempt
+  // came back later and overwrote the newer, correct answer — which is how a
+  // just-created business ended up displayed as a customer. An attempt only
+  // writes state while it is still the newest one.
+  const resolveGen      = useRef(0);
   function cancelResolveRetry() {
     if (resolveTimer.current) { clearTimeout(resolveTimer.current); resolveTimer.current = null; }
   }
@@ -124,11 +193,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
      'user' and making the role flip-flop between reloads. We now only ever
      change the role from a CONCLUSIVE answer (an HTTP-200 body); an
      inconclusive lookup keeps the current role and schedules a retry. */
-  async function resolveAccount(uid: string, sbUser?: SbUser, attempt = 0) {
+  async function resolveAccount(uid: string, sbUser?: SbUser, attempt = 0, gen?: number) {
     // Skip when we already have a DEFINITIVE resolution for this uid (a prior
     // call — or a parallel auth event — already settled it). `refreshAccount`
     // clears lastResolvedUid to force a fresh read past this guard.
     if (lastResolvedUid.current === uid && accountTypeRef.current) return;
+
+    // Retries stay on the generation they were scheduled with; a fresh call
+    // claims a new one and thereby invalidates everything older.
+    const myGen = gen ?? ++resolveGen.current;
+    /** Has a newer resolve (or a different user) superseded this attempt? */
+    const superseded = () => resolveGen.current !== myGen || activeUidRef.current !== uid;
+
+    setAccountResolving(true);
+
+    /** Commit a definitive answer — but only if we're still the newest attempt. */
+    const settle = (t: AccountType, supplier: Supplier | null, profile: UserProfile | null) => {
+      if (superseded()) return true;          // newer answer already on screen; we're done
+      setCurrentSupplier(supplier);
+      setCurrentProfile(profile);
+      applyAccountType(t);
+      writeCachedAccount({ uid, accountType: t, supplier, profile });
+      lastResolvedUid.current = uid;
+      cancelResolveRetry();
+      setAccountResolving(false);
+      setAccountError(false);
+      return true;
+    };
 
     // ── 1) Supplier lookup — authoritative for business / supplier / agent ──
     let supplierConclusive = false; // 200 response we can trust (row or empty)
@@ -136,23 +227,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`/api/suppliers?authUserId=${encodeURIComponent(uid)}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        const sup  = Array.isArray(data) ? data[0] ?? null : null;
+        const sup  = Array.isArray(data) ? (data[0] as Supplier | undefined) ?? null : null;
         if (sup) {
           const t: AccountType = sup.accountType === 'supplier' ? 'supplier'
                                : sup.accountType === 'agent'    ? 'agent'
                                :                                  'business';
-          setCurrentSupplier(sup);
-          setCurrentProfile(null);
-          applyAccountType(t);
-          writeCachedAccount(uid, t);
-          lastResolvedUid.current = uid;      // definitive
-          cancelResolveRetry();
+          settle(t, sup, null);
           return;
         }
         supplierConclusive = true;            // 200 + no row ⇒ genuinely not a store
       }
       // non-2xx ⇒ inconclusive; fall through to the retry path below
     } catch { /* network / timeout ⇒ inconclusive */ }
+
+    if (superseded()) return;
 
     // ── 2) Profile lookup — only meaningful once we KNOW there's no store row ──
     if (supplierConclusive) {
@@ -162,27 +250,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           if (data?.id) {
-            setCurrentProfile(data);
-            setCurrentSupplier(null);
-            applyAccountType('user');
-            writeCachedAccount(uid, 'user');
-            lastResolvedUid.current = uid;    // definitive
-            cancelResolveRetry();
+            settle('user', null, data as UserProfile);
             return;
           }
           profileConclusive = true;           // 200 + no row ⇒ brand-new user
         }
       } catch { /* inconclusive */ }
 
+      if (superseded()) return;
+
       // ── 3) Genuinely new account (no store, no profile) — create a customer
       //    profile so signup lands somewhere. Reached ONLY when BOTH lookups
       //    returned a conclusive "nothing", so a blip can never trigger it. ──
       //
-      //    NOT while an OAuth signup is still in flight: on /auth/callback the
-      //    callback view is creating the store this very moment, so "no store"
-      //    means "not yet", not "customer". Racing it here is what turned
-      //    Google sign-ups that chose Business into customer accounts.
-      if (profileConclusive && sbUser && !oauthSignupInFlight()) {
+      //    NOT while a signup is still in flight: the signup screen (email) or
+      //    the callback view (Google) is POSTing the store row this very
+      //    moment, so "no store" means "not yet", not "customer". Racing it
+      //    here is what turned sign-ups that chose Business into customers.
+      if (profileConclusive && sbUser && !signupInFlight()) {
         try {
           const res = await fetch('/api/profile', {
             method:  'POST',
@@ -196,28 +281,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           if (res.ok) {
             const profile = await res.json();
-            setCurrentProfile(profile);
-            setCurrentSupplier(null);
-            applyAccountType('user');
-            writeCachedAccount(uid, 'user');
-            lastResolvedUid.current = uid;    // definitive
-            cancelResolveRetry();
+            settle('user', null, profile as UserProfile);
             return;
           }
         } catch { /* fall through to retry */ }
       }
     }
 
+    if (superseded()) return;
+
     // ── Inconclusive: a lookup failed. Keep the current role (never downgrade)
     //    and retry a few times so a momentary blip can't flip the profile. We
     //    deliberately DON'T set lastResolvedUid, so a later auth event resolves
     //    too. ──
     cancelResolveRetry();
-    if (attempt < 3 && activeUidRef.current === uid) {
+    if (attempt < 3) {
       resolveTimer.current = setTimeout(() => {
-        if (activeUidRef.current === uid) resolveAccount(uid, sbUser, attempt + 1);
+        if (!superseded()) resolveAccount(uid, sbUser, attempt + 1, myGen);
       }, 1200 * (attempt + 1));
+      return;
     }
+
+    // Out of retries. The role on screen (if any) came from cache and may be
+    // missing its store row — say so instead of rendering blank fields.
+    setAccountResolving(false);
+    setAccountError(true);
   }
 
   /* ── Apply the current Supabase session ───────────────────────── */
@@ -241,12 +329,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (effective) {
-      // Optimistic role from the last resolved value for this uid → nav and
-      // role-gated views render the right audience at once, then resolveAccount
-      // confirms/corrects it. Only when we don't already have a type.
+      // Optimistic role AND row from the last resolved value for this uid → nav
+      // and role-gated views render the right audience *with real data* at once,
+      // then resolveAccount confirms/corrects it. Only when we don't already
+      // have a type.
       if (!accountTypeRef.current) {
         const cached = readCachedAccount();
-        if (cached && cached.uid === effective.id) applyAccountType(cached.accountType);
+        if (cached && cached.uid === effective.id) {
+          applyAccountType(cached.accountType);
+          // Hydrating the row is what keeps a reloading business owner from
+          // seeing their own profile page with every field empty.
+          if (cached.supplier) setCurrentSupplier(cached.supplier);
+          if (cached.profile)  setCurrentProfile(cached.profile);
+        }
       }
       resolveAccount(effective.id, sbUser ?? undefined);
     } else {
@@ -254,6 +349,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setCurrentSupplier(null);
       setCurrentProfile(null);
       applyAccountType(null);
+      setAccountResolving(false);
+      setAccountError(false);
       clearCachedAccount();
     }
     setLoading(false);
@@ -302,10 +399,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     // Clear local state immediately so the UI reflects the sign-out at once
     cancelResolveRetry();
+    resolveGen.current++;           // abandon any in-flight resolve
     lastResolvedUid.current = null;
     activeUidRef.current    = null;
     setActingStore(null);
     setUser(null); setCurrentSupplier(null); setCurrentProfile(null); applyAccountType(null);
+    setAccountResolving(false); setAccountError(false);
     clearCachedAccount();
     try {
       await getSupabase().auth.signOut();
@@ -329,6 +428,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!sbUser) return;
     activeUidRef.current   = sbUser.id;
     lastResolvedUid.current = null;   // force a re-resolve
+    setAccountError(false);
     await resolveAccount(sbUser.id, sbUser);
   };
 
@@ -403,6 +503,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       accountType:     effectiveAccountType,
       currentSupplier: effectiveSupplier,
       currentProfile,
+      accountResolving, accountError,
       signOut, refreshAccount, updateProfile,
       actingStore, setActingStore, agentSelf,
     }}>

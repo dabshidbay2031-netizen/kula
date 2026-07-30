@@ -11,6 +11,7 @@ import { cashierCanAccess } from '@/lib/cashierPrivileges';
 import { useIsAdmin } from '@/lib/useIsAdmin';
 import { useChatUnread } from '@/lib/useChatUnread';
 import { openAssistant } from '@/lib/assistant';
+import { useInstall } from '@/lib/installApp';
 import BrandMark from '@/components/BrandMark';
 
 export default function Sidebar() {
@@ -21,6 +22,7 @@ export default function Sidebar() {
   const { cashier, logoutCashier } = useCashier();
   const { isAdmin } = useIsAdmin();
   const chatUnread = useChatUnread();
+  const { installed, install } = useInstall();
 
   async function handleLogout() {
     await signOut();
@@ -248,6 +250,21 @@ export default function Sidebar() {
 
         {/* Cart button */}
         <div className="sidebar-footer">
+          {/* Install lives in the pinned footer so it's visible without
+              scrolling, and stays until the app is actually installed. The
+              `mounted` guard keeps it out of the server render, which can't
+              know whether this is already the installed app. */}
+          {mounted && !installed && (
+            <button className="sidebar-item sidebar-install-btn" onClick={install}>
+              <span className="sidebar-item-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="5" y="2" width="14" height="20" rx="2.5"/>
+                  <path d="M12 7v8m0 0 3-3m-3 3-3-3"/>
+                </svg>
+              </span>
+              <span className="sidebar-item-label">Install app</span>
+            </button>
+          )}
           {cashier && (
             <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-light)', marginBottom: 4 }}>
               <div style={{ fontSize: '.78rem', color: 'var(--text-light)' }}>Logged in as</div>

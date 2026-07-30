@@ -28,10 +28,13 @@
   --nav-h:         68px;
   --header-h:      60px;
   --sidebar-w:     220px;
-  /* Bottom clearance for the fixed mobile bottom-nav + iOS home indicator.
-     Shared by #app (padding-bottom) and .site-footer (negative margin) so the
-     two can never drift apart — the footer always absorbs exactly this much,
-     leaving no empty gap below it. Reset to 0 on desktop (no bottom nav). */
+  /* Bottom clearance for the fixed mobile bottom-nav + iOS home indicator —
+     i.e. exactly how much vertical space the nav occupies.
+     Shared by #app (padding-bottom), .site-footer (negative margin) and every
+     element that floats ABOVE the nav (cart FAB, install banner, POS layout),
+     so none of them can drift apart from the nav's real height. Anchoring any
+     of them to --nav-h alone leaves out the home-indicator inset and hides
+     them behind the nav. Reset to 0 on desktop (no bottom nav). */
   --app-pad-b:     calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
   /* Motion system — durations + easings */
   --dur-fast:      .15s;
@@ -234,6 +237,20 @@ ul { list-style: none; }
   top: 8px;
   right: calc(50% - 16px);
 }
+/* Six slots (the Install entry is showing). Each item drops from 20% to 16.6%
+   of the width, which is ~53px on a 320px phone — so tighten the label and let
+   it shrink rather than wrap onto a second line and blow out the nav height. */
+.bottom-nav.compact .nav-item      { gap: 2px; padding-inline: 2px; min-width: 0; }
+.bottom-nav.compact .nav-item svg  { width: 21px; height: 21px; }
+.bottom-nav.compact .nav-item span {
+  font-size: .58rem;
+  letter-spacing: -.01em;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bottom-nav.compact .nav-item .nav-badge { right: calc(50% - 14px); }
 
 /* ── Main content ──────────────────────────────── */
 .page-anim { animation: fadeIn .2s ease; }
@@ -611,7 +628,10 @@ ul { list-style: none; }
 .pos-layout {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - var(--header-h) - var(--nav-h));
+  /* --app-pad-b covers the nav AND the home-indicator inset. With plain
+     --nav-h the POS was taller than the space available and its checkout
+     controls sat underneath the bottom nav — unreachable for the cashier. */
+  height: calc(100dvh - var(--header-h) - var(--app-pad-b));
 }
 .pos-store-tag {
   font-size: .8rem; font-weight: 700; color: var(--primary);
@@ -672,7 +692,12 @@ ul { list-style: none; }
 /* Cart drawer */
 .cart-fab {
   position: fixed;
-  bottom: calc(var(--nav-h) + 16px);
+  /* --app-pad-b, not --nav-h: the nav is nav-h PLUS the home-indicator inset,
+     so anchoring to --nav-h put this button behind the nav on every iPhone
+     X-and-later and every Android gesture-bar phone. Same for the install
+     banner and the POS layout below. --app-pad-b is 0 where the nav is
+     hidden, so the desktop case stays correct for free. */
+  bottom: calc(var(--app-pad-b) + 16px);
   right: 16px;
   z-index: 150;
   width: 56px;
@@ -1413,6 +1438,18 @@ ul { list-style: none; }
     flex-shrink: 0;
   }
   .sidebar-cart-btn { color: var(--text-muted); }
+  /* Install is a call to action, not another destination — tint it so it reads
+     as one without shouting over the real navigation above it. */
+  .sidebar-install-btn {
+    color: var(--primary);
+    font-weight: 700;
+    background: color-mix(in srgb, var(--primary) 9%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--primary) 35%, transparent);
+    width: 100%;
+    cursor: pointer;
+    margin-bottom: 6px;
+  }
+  .sidebar-install-btn:hover { background: color-mix(in srgb, var(--primary) 16%, transparent); }
 
   /* ── Main app area ── */
   #app {
@@ -1687,7 +1724,7 @@ ul { list-style: none; }
 /* ══════════════════════════════════════════════════
    PWA INSTALL PROMPT
 ══════════════════════════════════════════════════ */
-.install-prompt { position: fixed; bottom: calc(var(--nav-h) + 12px); left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; background: var(--text); color: #fff; border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow-lg); z-index: 150; animation: mgSlideUp .25s ease; }
+.install-prompt { position: fixed; bottom: calc(var(--app-pad-b) + 12px); left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; background: var(--text); color: #fff; border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow-lg); z-index: 150; animation: mgSlideUp .25s ease; }
 .install-prompt-icon { font-size: 1.6rem; flex-shrink: 0; }
 .install-prompt-content { flex: 1; min-width: 0; }
 .install-prompt-title  { font-size: .88rem; font-weight: 700; }
@@ -2178,7 +2215,7 @@ ul { list-style: none; }
   .inv-item-icon { width: 40px; height: 40px; font-size: 1.4rem; }
   .inv-item-name { font-size: .8rem; }
   
-  .cart-fab { width: 50px; height: 50px; bottom: calc(var(--nav-h) + 12px); right: 12px; }
+  .cart-fab { width: 50px; height: 50px; bottom: calc(var(--app-pad-b) + 12px); right: 12px; }
   .cart-fab svg { width: 22px; height: 22px; }
   
   .notif-item { padding: 10px; }
@@ -2232,8 +2269,12 @@ ul { list-style: none; }
   .bottom-nav { height: 72px; }
   .nav-item span { font-size: .68rem; }
   
-  #app { padding-bottom: var(--nav-h); }
-  :root { --app-pad-b: var(--nav-h); }
+  /* Must include the safe-area inset: .bottom-nav adds it as padding
+     unconditionally, so dropping it here made --app-pad-b smaller than the nav
+     actually is — and everything anchored to it (cart FAB, install banner, POS
+     footer) slid under the nav on an iPad with a home indicator. */
+  #app  { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
+  :root { --app-pad-b:    calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
   /* The bottom-nav hides at 960px (above), so from 960–1023px this tablet
      query would wrongly re-add nav clearance. Reset it to 0 to match desktop. */
   @media (min-width: 960px) { :root { --app-pad-b: 0; } }
@@ -2412,9 +2453,11 @@ ul { list-style: none; }
   .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; height: auto; min-height: 52px; }
   .nav-item svg { width: 20px; height: 20px; }
   .nav-item span { font-size: .58rem; }
-  /* Extra bottom padding so content clears the shorter landscape nav */
-  #app { padding-bottom: 52px; }
-  :root { --app-pad-b: 52px; }
+  /* Extra bottom padding so content clears the shorter landscape nav.
+     Landscape still has a home indicator on iOS, and .bottom-nav still pads
+     for it — so the inset belongs here too. */
+  #app  { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
+  :root { --app-pad-b:    calc(52px + env(safe-area-inset-bottom, 0px)); }
   /* Only meaningful where the bottom nav is actually shown (<960px); on a
      wide-but-short screen the nav is hidden, so keep clearance at 0. */
   @media (min-width: 960px) {
@@ -3754,6 +3797,43 @@ ul { list-style: none; }
 }
 .pimg-add-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .pimg-add-btn:disabled             { opacity: .6; cursor: default; }
+
+/* Take Photo / Gallery sit side by side; they stack on very narrow phones so
+   neither label has to wrap. */
+.pimg-actions { display: flex; gap: 8px; }
+.pimg-actions .pimg-add-btn { flex: 1; min-width: 0; padding: 13px 10px; }
+@media (max-width: 359px) { .pimg-actions { flex-direction: column; } }
+
+/* The camera is the primary action — solid, not dashed like the fallback. */
+.pimg-cam-btn {
+  border-style: solid;
+  border-color: var(--primary);
+  background:   var(--primary);
+  color:        #fff;
+}
+.pimg-cam-btn:hover:not(:disabled) { filter: brightness(1.06); color: #fff; border-color: var(--primary); }
+
+/* ── In-app camera (components/CameraCapture) ────────────────────── */
+.cam-chip {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: none; cursor: pointer;
+  background: rgba(0,0,0,.55); color: #fff;
+  font-size: 1rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.cam-chip[aria-pressed="true"] { background: var(--warning, #f59e0b); }
+
+.cam-shutter {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--primary);
+  border: 4px solid var(--surface);
+  box-shadow: 0 0 0 3px var(--primary), var(--shadow-lg);
+  cursor: pointer;
+  transition: transform .12s ease;
+}
+.cam-shutter:active:not(:disabled) { transform: scale(.92); }
+.cam-shutter:disabled { opacity: .45; cursor: default; box-shadow: 0 0 0 3px var(--border); }
 
 /* ══════════════════════════════════════════════════════
    PERFORMANCE — added last so they override earlier rules

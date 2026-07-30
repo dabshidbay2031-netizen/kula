@@ -1,7 +1,11 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { getSupabase } from '@/lib/supabase';
+
+// Kept out of the main bundle — the camera is only loaded when someone opens it.
+const CameraCapture = dynamic(() => import('@/components/CameraCapture'), { ssr: false });
 
 interface Props {
   /** Current array of photo URLs */
@@ -16,12 +20,13 @@ export default function ProductImageUpload({ urls, onChange, maxPhotos = 8 }: Pr
   const fileRef            = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error,     setError]     = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
-  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  const remaining = maxPhotos - urls.length;
+
+  /** Upload files to storage and append the resulting public URLs. */
+  async function uploadFiles(files: File[]) {
     if (!files.length) return;
-
-    const remaining = maxPhotos - urls.length;
     if (remaining <= 0) {
       setError(`Maximum ${maxPhotos} photos allowed`);
       return;
@@ -56,6 +61,11 @@ export default function ProductImageUpload({ urls, onChange, maxPhotos = 8 }: Pr
 
     if (newUrls.length) onChange([...urls, ...newUrls]);
     setUploading(false);
+  }
+
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    await uploadFiles(Array.from(e.target.files ?? []));
+    // Clear the input so picking the SAME file again still fires a change event.
     if (fileRef.current) fileRef.current.value = '';
   }
 
@@ -86,29 +96,44 @@ export default function ProductImageUpload({ urls, onChange, maxPhotos = 8 }: Pr
         </div>
       )}
 
-      {/* Add button */}
-      {urls.length < maxPhotos && (
-        <button
-          type="button"
-          className="pimg-add-btn"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-        >
-          {uploading ? (
-            <><span className="btn-spinner" /> Uploading…</>
-          ) : (
-            <>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/>
-                <path d="M21 15l-5-5L5 21"/>
-                <line x1="15" y1="9" x2="21" y2="9"/>
-                <line x1="18" y1="6" x2="18" y2="12"/>
-              </svg>
-              Add {urls.length === 0 ? 'Photos' : 'More'} ({urls.length}/{maxPhotos})
-            </>
-          )}
-        </button>
+      {/* Add buttons — camera first: photographing the item in front of you is
+          the common case, and hunting through a gallery for a photo you haven't
+          taken yet was the only option before. */}
+      {remaining > 0 && (
+        <div className="pimg-actions">
+          <button
+            type="button"
+            className="pimg-add-btn pimg-cam-btn"
+            onClick={() => setCameraOpen(true)}
+            disabled={uploading}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            Take Photo
+          </button>
+
+          <button
+            type="button"
+            className="pimg-add-btn"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <><span className="btn-spinner" /> Uploading…</>
+            ) : (
+              <>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <path d="M21 15l-5-5L5 21"/>
+                </svg>
+                Gallery ({urls.length}/{maxPhotos})
+              </>
+            )}
+          </button>
+        </div>
       )}
 
       <input
@@ -119,6 +144,15 @@ export default function ProductImageUpload({ urls, onChange, maxPhotos = 8 }: Pr
         style={{ display: 'none' }}
         onChange={handleFiles}
       />
+
+      {cameraOpen && (
+        <CameraCapture
+          remaining={remaining}
+          onClose={() => setCameraOpen(false)}
+          onCapture={files => { uploadFiles(files); }}
+          title={maxPhotos === 1 ? 'Take a Photo' : 'Take Product Photos'}
+        />
+      )}
 
       {error && (
         <div className="auth-error" style={{ marginTop: 8, fontSize: '.8rem' }}>{error}</div>

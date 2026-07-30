@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from '@/lib/hashRouter';
 import { useRouter } from '@/lib/hashRouter';
 import { getSupabase } from '@/lib/supabase';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, SIGNUP_IN_FLIGHT_KEY } from '@/context/AuthContext';
 import { SUBSCRIPTION_PRICES, SUBSCRIPTION_TRIAL_DAYS } from '@/lib/subscription';
 import { GENDERS, birthYearOptions, isCompleteDemographics, type Gender } from '@/lib/demographics';
 
@@ -51,25 +51,46 @@ export default function SignupPage() {
                 : null;
 
   /* ── Helpers ─────────────────────────────────── */
-  async function createRecord(uid: string, userName: string, userPhone = '') {
-    if (acctType === 'business' || acctType === 'supplier' || acctType === 'agent') {
-      await fetch('/api/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: userName.trim(), authUserId: uid, accountType: acctType }),
-      });
-    } else {
-      await fetch('/api/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  /**
+   * Create the account's store (business/supplier/agent) or customer profile.
+   *
+   * Returns the failure reason, or null on success. This used to be a bare
+   * `await fetch(...)` whose result was thrown away: when the POST failed the
+   * signup carried on regardless, the user was left with a login and no store,
+   * and AuthContext then resolved them as a plain customer. That is exactly the
+   * "I picked Business, got a personal account, and saw no error" report — so
+   * every caller must now check this.
+   */
+  async function createRecord(uid: string, userName: string, userPhone = ''): Promise<string | null> {
+    const isSeller = acctType === 'business' || acctType === 'supplier' || acctType === 'agent';
+    const [url, payload]: [string, Record<string, unknown>] = isSeller
+      ? ['/api/suppliers', { name: userName.trim(), authUserId: uid, accountType: acctType }]
+      : ['/api/profile', {
           id: uid, fullName: userName.trim(), phone: userPhone, avatar: '👤',
           // Required for shoppers; the server re-validates.
           gender,
           birthYear: birthYear ? Number(birthYear) : null,
-        }),
-      });
+        }];
+
+    // One retry: a single dropped request on a mobile connection shouldn't cost
+    // someone the account type they paid attention to choosing.
+    let lastError = 'Network error — check your connection.';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(payload),
+        });
+        if (res.ok) return null;
+        lastError = await res.json().then(
+          (d: { error?: string }) => d?.error || `Server error (${res.status})`,
+          () => `Server error (${res.status})`,
+        );
+      } catch { /* network — retry below */ }
+      if (attempt === 0) await new Promise(r => setTimeout(r, 800));
     }
+    return lastError;
   }
 
   /* ══════════════════════════════════════════════
@@ -86,40 +107,63 @@ export default function SignupPage() {
     if (password !== password2) { setError('Passwords do not match'); return; }
     setError(''); setLoading(true);
 
-    const { data, error: err } = await getSupabase().auth.signUp({
-      email:    email.trim(),
-      password,
-      options: {
-        data: { full_name: name.trim() },
-      },
-    });
+    // Tell AuthContext a signup is running BEFORE Supabase issues the session.
+    // The moment signUp() resolves, the auth listener starts resolving this
+    // user — and without this marker it would find no store yet, conclude
+    // "customer", and create a customer profile for a business signup.
+    try {
+      localStorage.setItem(SIGNUP_IN_FLIGHT_KEY, JSON.stringify({ accountType: acctType, startedAt: Date.now() }));
+    } catch { /* private mode */ }
 
-    if (err) {
-      setError(err.message);
+    try {
+      const { data, error: err } = await getSupabase().auth.signUp({
+        email:    email.trim(),
+        password,
+        options: {
+          data: { full_name: name.trim() },
+        },
+      });
+
+      if (err) {
+        setError(err.message);
+        return;
+      }
+
+      const uid = data.user?.id;
+      if (!uid) { setError('Signup failed. Please try again.'); return; }
+
+      const createErr = await createRecord(uid, name);
+      if (createErr) {
+        // The login exists but its store/profile doesn't. Say so plainly rather
+        // than dropping the user into the wrong account type with no warning.
+        setError(
+          acctType === 'user'
+            ? `Your login was created, but we couldn't finish your profile: ${createErr} Please sign in and try again.`
+            : `Your login was created, but we couldn't set up your ${acctType === 'supplier' ? 'supplier' : acctType === 'agent' ? 'agent' : 'business'} account: ${createErr} Please sign in and contact support so it isn't left as a personal account.`
+        );
+        return;
+      }
+
+      if (data.session) {
+        // Email confirmation disabled — user is logged in immediately.
+        // AuthContext resolved the account BEFORE the supplier record above
+        // existed (it saw a plain customer) — re-resolve now, or a fresh
+        // business/supplier lands on the CUSTOMER UI until a manual refresh.
+        await refreshAccount().catch(() => {});
+        // A new seller's next step is paying for the store — send them straight
+        // to Billing instead of a profile page they have no reason to visit yet.
+        router.push(acctType === 'business' || acctType === 'supplier' ? '/billing' : '/profile');
+      } else {
+        // Email confirmation required — show "check email" message
+        setEmailSent(true);
+        setEmailStep('done');
+      }
+    } finally {
+      // Always clear the marker, or a later genuine "no account" case could
+      // never auto-create a profile in this browser again.
+      try { localStorage.removeItem(SIGNUP_IN_FLIGHT_KEY); } catch { /* ignore */ }
       setLoading(false);
-      return;
     }
-
-    const uid = data.user?.id;
-    if (!uid) { setError('Signup failed. Please try again.'); setLoading(false); return; }
-
-    await createRecord(uid, name);
-
-    if (data.session) {
-      // Email confirmation disabled — user is logged in immediately.
-      // AuthContext resolved the account BEFORE the supplier record above
-      // existed (it saw a plain customer) — re-resolve now, or a fresh
-      // business/supplier lands on the CUSTOMER UI until a manual refresh.
-      await refreshAccount().catch(() => {});
-      // A new seller's next step is paying for the store — send them straight
-      // to Billing instead of a profile page they have no reason to visit yet.
-      router.push(acctType === 'business' || acctType === 'supplier' ? '/billing' : '/profile');
-    } else {
-      // Email confirmation required — show "check email" message
-      setEmailSent(true);
-      setEmailStep('done');
-    }
-    setLoading(false);
   }
 
   /* ══════════════════════════════════════════════
@@ -149,6 +193,9 @@ export default function SignupPage() {
       name:        name.trim(),
       gender,
       birthYear,
+      // Lets AuthContext expire an abandoned signup instead of treating this
+      // browser as "signup in progress" forever.
+      startedAt:   Date.now(),
     }));
 
     const { error: err } = await getSupabase().auth.signInWithOAuth({

@@ -169,6 +169,7 @@ interface VerifRequest { id: number; status: string; message: string | null; cre
 export default function ProfilePage() {
   const router  = useRouter();
   const { user, currentSupplier, currentProfile, accountType, loading,
+          accountResolving, accountError,
           signOut, refreshAccount, updateProfile,
           actingStore, setActingStore, agentSelf } = useAuth();
   const { state, toast, reloadProducts } = useApp();
@@ -1121,6 +1122,42 @@ export default function ProfilePage() {
           {/* Referral section */}
           <ReferralCard userId={user.id} />
         </div>
+      </div>
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     SELLER ROLE, BUT NO STORE ROW LOADED
+     Everything below reads `currentSupplier`. Rendering it while the store is
+     still loading (or failed to load) produced a business page with every
+     field blank — "I see no business in my profile settings". Show what's
+     actually happening instead, with a way out.
+  ══════════════════════════════════════════════════════════════ */
+  if (!currentSupplier) {
+    return (
+      <div className="page-anim">
+        <Header showSearch={false} />
+        {accountResolving && !accountError ? (
+          <div style={{ padding: 20 }}>
+            <div className="skeleton" style={{ height: 140, borderRadius: 20, marginBottom: 16 }} />
+            <div className="skeleton" style={{ height: 44, borderRadius: 8, marginBottom: 10 }} />
+            <div className="skeleton" style={{ height: 80, borderRadius: 8 }} />
+          </div>
+        ) : (
+          <div className="empty-state" style={{ marginTop: 60 }}>
+            <div className="empty-icon">🏪</div>
+            <div className="empty-title">Couldn&apos;t load your store</div>
+            <div className="empty-sub" style={{ maxWidth: 380, margin: '0 auto' }}>
+              You&apos;re signed in as a {accountType === 'supplier' ? 'supplier' : accountType === 'agent' ? 'field agent' : 'business'},
+              but we couldn&apos;t fetch your store details — usually a connection problem.
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 16 }}
+              onClick={() => { refreshAccount().catch(() => {}); }}>
+              Try again
+            </button>
+            <button className="btn btn-outline" style={{ marginTop: 10 }} onClick={handleSignOut}>Sign Out</button>
+          </div>
+        )}
       </div>
     );
   }

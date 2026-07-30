@@ -38,6 +38,9 @@ import OfflineBanner     from '@/components/OfflineBanner';
 import SyncManager       from '@/components/SyncManager';
 import AiAssistant       from '@/components/AiAssistant';
 import PushManager       from '@/components/PushManager';
+import InstallGuide      from '@/components/InstallGuide';
+import { BOOT_WATCHDOG_HTML, BOOT_WATCHDOG_SCRIPT } from '@/lib/bootWatchdog';
+import { INSTALL_CAPTURE_SCRIPT } from '@/lib/installCapture';
 
 // This app is fully dynamic (auth + real-time DB) — never statically pre-render.
 export const dynamic = 'force-dynamic';
@@ -139,6 +142,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           inject attributes like cz-shortcut-listen onto <body> before React
           hydrates. Applies to this element's attributes only, not children. */}
       <body suppressHydrationWarning>
+        {/* Boot watchdog — plain HTML + inline script, so it can speak up even
+            when the app bundle hasn't arrived (slow link) or can't (offline).
+            dangerouslySetInnerHTML keeps its subtree entirely out of React's
+            hands, which is what lets the inline onclick work pre-hydration. */}
+        <div
+          id="hm-boot-warn"
+          suppressHydrationWarning
+          style={{
+            display: 'none', position: 'fixed', inset: 0, zIndex: 10000,
+            flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            padding: 24, background: 'var(--bg, #f1f5f9)', color: 'var(--text, #0f172a)',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+          }}
+          dangerouslySetInnerHTML={{ __html: BOOT_WATCHDOG_HTML }}
+        />
+        <script dangerouslySetInnerHTML={{ __html: BOOT_WATCHDOG_SCRIPT }} />
+        {/* Catches the browser's one-shot install event before the bundle
+            loads — otherwise it's lost and Install can only ever show
+            instructions. See lib/installCapture.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }} />
+
         <HashRouterProvider>
         <AuthProvider>
         <CashierProvider>
@@ -159,6 +183,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <ToastContainer />
               <AiAssistant />
               <InstallPrompt />
+              <InstallGuide />
               <WishlistSync />
               <PushManager />
             </AppProvider>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>No connection — Hamar Mall</title>
+<link rel="icon" href="/icons/icon-192.png">
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100dvh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 32px 24px; text-align: center;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f1f5f9; color: #0f172a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0b1220; color: #e2e8f0; }
+    .sub { color: #94a3b8 !important; }
+  }
+  .logo { font-size: 2.75rem; line-height: 1; }
+  h1 { font-size: 1.25rem; font-weight: 800; margin: 4px 0 0; }
+  .sub { font-size: .92rem; line-height: 1.55; color: #475569; max-width: 22rem; margin: 0; }
+  button {
+    margin-top: 10px; padding: 12px 26px; border: 0; border-radius: 10px;
+    background: #1257e5; color: #fff; font-size: .95rem; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+  }
+  button:disabled { opacity: .6; cursor: default; }
+  .hint { font-size: .78rem; opacity: .7; margin-top: 18px; }
+</style>
+</head>
+<body>
+  <div class="logo">🏪</div>
+  <h1>No internet connection</h1>
+  <p class="sub" id="msg">
+    Hamar Mall can’t reach the internet right now. Check your mobile data or Wi‑Fi and try again.
+  </p>
+  <button id="retry" type="button">Try again</button>
+  <p class="hint">Your cart and any offline sales are saved on this device.</p>
+
+<script>
+  var btn = document.getElementById('retry');
+  var msg = document.getElementById('msg');
+
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    // Reload rather than probing: the service worker will serve the real app
+    // the moment the network answers.
+    location.replace('/');
+  });
+
+  // Auto-recover the instant the device reports a connection again.
+  window.addEventListener('online', function () { location.replace('/'); });
+
+  if (navigator.onLine) {
+    msg.textContent =
+      'Your device says it’s connected, but Hamar Mall couldn’t load. The network may be too slow or blocking the connection.';
+  }
+</script>
+</body>
+</html>

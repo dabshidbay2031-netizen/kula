@@ -193,18 +193,26 @@ export async function POST(req: Request) {
         .from('suppliers').insert(newSupplier).select().single());
     }
     if (error) throw error;
-    return NextResponse.json(mapSupplier(data as Record<string, unknown>), { status: 201 });
+
+    const created = data as Record<string, unknown>;
+    // A store with no auth_user_id belongs to nobody: the owner signs in and
+    // resolves as a plain CUSTOMER while their store sits orphaned in the
+    // table. Refuse rather than hand back a store the caller can never reach.
+    if (authUserId && !created.auth_user_id) {
+      await getSupabaseAdmin().from('suppliers').delete().eq('id', created.id);
+      throw new Error('store was created without an owner link');
+    }
+    return NextResponse.json(mapSupplier(created), { status: 201 });
   } catch (e1) {
-    // Phase 2: auth_user_id column is still UUID — insert without it
+    // Phase 2: the auth_user_id column is still UUID-typed and rejected the id.
+    // We used to insert WITHOUT it here — which produced exactly the orphaned
+    // store described above and silently downgraded the seller to a customer.
+    // Fail loudly instead; the fix is the migration, not a broken row.
     if (isUUIDError(e1)) {
-      try {
-        const { data, error } = await getSupabaseAdmin()
-          .from('suppliers').insert({ ...baseFields, id: nextId }).select().single();
-        if (error) throw error;
-        return NextResponse.json(mapSupplier(data as Record<string, unknown>), { status: 201 });
-      } catch (e2) {
-        return NextResponse.json({ error: errMsg(e2) }, { status: 500 });
-      }
+      return NextResponse.json({
+        error: 'This deployment\'s database still has a UUID auth_user_id column. '
+             + 'Run the pending migration so seller accounts can be linked to their login.',
+      }, { status: 500 });
     }
     return NextResponse.json({ error: errMsg(e1) }, { status: 500 });
   }
