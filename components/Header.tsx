@@ -122,6 +122,52 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
 
   useEffect(() => { setMounted(true); }, []);
 
+  /* ── Desktop sidebar toggle ────────────────────────────────────────
+     The three-bar mark does two different jobs depending on width: below
+     960px it opens the mobile drawer, at desktop widths it shows/hides the
+     sidebar. The state is a `data-sidebar` attribute on <html> so the CSS
+     can move both the sidebar and the content offset without prop-drilling
+     through every page, and it is remembered so a hidden sidebar stays
+     hidden across navigation and reloads. */
+  const DESKTOP = '(min-width: 960px)';
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const stored = (() => { try { return localStorage.getItem('mg_sidebar_hidden') === '1'; } catch { return false; } })();
+    setSidebarHidden(stored);
+  }, []);
+
+  // Which job the button is doing right now — kept in state rather than read
+  // at click time so the label and aria-expanded describe what will happen.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(DESKTOP);
+    const sync = () => setIsDesktop(mq.matches);
+    sync();
+    mq.addEventListener?.('change', sync);
+    return () => mq.removeEventListener?.('change', sync);
+  }, []);
+
+  // Reflect the state for the CSS. Deliberately does NOT write storage: that
+  // happens only when the user actually toggles, so simply opening a page
+  // never leaves a key behind.
+  useEffect(() => {
+    if (!mounted) return;
+    document.documentElement.setAttribute('data-sidebar', sidebarHidden ? 'hidden' : 'shown');
+  }, [sidebarHidden, mounted]);
+
+  const onMenuClick = () => {
+    // `isDesktop` rather than a matchMedia call here — the value is already
+    // tracked, and matchMedia does not exist in every environment.
+    if (!isDesktop) { setMenuOpen(true); return; }
+    setSidebarHidden(prev => {
+      const next = !prev;
+      try { localStorage.setItem('mg_sidebar_hidden', next ? '1' : '0'); } catch { /* storage full */ }
+      return next;
+    });
+  };
+
   // Freeze the page behind the open drawer
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
@@ -191,7 +237,17 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
   return (
     <>
       <header className="header" suppressHydrationWarning>
-        <button className="menu-btn" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
+        {/* The three-bar mark. On a phone it opens the menu drawer; on desktop
+            it shows/hides the sidebar. `mounted` guards the label so the server
+            render (which cannot know the viewport) can't mismatch. */}
+        <button
+          className="menu-btn"
+          aria-label={mounted && isDesktop
+            ? (sidebarHidden ? 'Show menu' : 'Hide menu')
+            : 'Open menu'}
+          aria-expanded={mounted && isDesktop ? !sidebarHidden : menuOpen}
+          onClick={onMenuClick}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
             <path d="M3 6h18M3 12h18M3 18h12"/>
           </svg>

@@ -12,6 +12,7 @@ import { authHeaders } from '@/lib/clientAuth';
 import { mapsDirectionsUrl } from '@/lib/maps';
 import StoreAvatar, { isLogoUrl } from '@/components/StoreAvatar';
 import { slugify, isValidSlug, RESERVED_SLUGS, storePath } from '@/lib/slug';
+import StoreQrCode from '@/components/StoreQrCode';
 import { useMyProductIds } from '@/lib/useMyProductIds';
 import { isRevenueOrder } from '@/lib/revenue';
 import type { Product, BusinessProduct, Supplier } from '@/lib/types';
@@ -1629,6 +1630,17 @@ export default function ProfilePage() {
                       ↗ Open
                     </a>
                   </div>
+                )}
+
+                {/* The same link as a scannable, printable code — the version
+                    that works in the shop rather than in a chat. */}
+                {currentSupplier?.slug && (
+                  <StoreQrCode
+                    storeName={currentSupplier.name || bizName || 'Our store'}
+                    storeUrl={typeof window !== 'undefined'
+                      ? `${window.location.origin}/${currentSupplier.slug}`
+                      : `/${currentSupplier.slug}`}
+                  />
                 )}
               </div>
 

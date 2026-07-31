@@ -104,15 +104,18 @@ export default function Receipt({
              the date, order number, "1 × $5.00" and the footer came out as
              ghosts while the bold black lines printed solid.
 
-             The receipt body is built with INLINE styles (that is what the
-             screen preview uses), and those inline greys are copied into this
-             document with the markup. A normal rule can't beat an inline
-             style, so this override is deliberately !important — it is the
-             only thing that can force them black. The on-screen preview is a
-             separate document and keeps its softer greys.
+             There are no greys left in the receipt markup — they were removed
+             at source so the screen and the paper agree. This block stays as a
+             GUARD: the body is built from inline styles copied in with the
+             markup, and a normal rule cannot beat an inline style, so if a
+             grey is ever reintroduced upstream this is the only thing that
+             would still force it black.
 
-             The small print is 12px at source (it was 10–11px): below roughly
-             12px a 203dpi head drops strokes even in solid black. */
+             font-weight matters as much as colour: normal-weight Courier
+             strokes are thin enough to under-burn even in solid black, which
+             is what made "Subtotal" print lighter than the amount beside it.
+             Small print is 12px (was 10–11px) — below roughly 12px a 203dpi
+             head drops strokes regardless of weight. */
           .receipt, .receipt * {
             color: #000 !important;
             opacity: 1 !important;
@@ -121,6 +124,9 @@ export default function Receipt({
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
+          /* Never lighter than semi-bold; genuinely bold text keeps its weight. */
+          .receipt, .receipt *:not(strong):not(b) { font-weight: 600; }
+          .receipt strong, .receipt b { font-weight: 800; }
           @media print {
             body { padding:0; }
             @page { margin:8mm; }
@@ -172,7 +178,17 @@ export default function Receipt({
           {/* Scrollable content */}
           <div style={{ overflowY:'auto', padding:'20px', flex:1 }}>
             {/* Receipt preview */}
-            <div ref={ref} style={{ fontFamily:"'Courier New', monospace", fontSize:13, color:'#000', lineHeight:1.5 }}>
+            {/* Everything on a receipt is pure black and at least semi-bold.
+                Two separate things make thermal output look faint, and both
+                are set here so no descendant can reintroduce either:
+                  • colour — a thermal head is 1-bit, so any grey is halftoned
+                    into a dot scatter and mostly misses the paper;
+                  • WEIGHT — normal-weight Courier strokes are thin enough to
+                    under-burn even in solid black, which is why "Subtotal"
+                    printed lighter than the amount beside it.
+                Inherited from the root, so it applies on screen and in the
+                print window alike. */}
+            <div ref={ref} style={{ fontFamily:"'Courier New', monospace", fontSize:13, color:'#000', fontWeight:600, lineHeight:1.5 }}>
 
               {/* Optional POS header lines (Settings → Point of Sale) */}
               {visibleHeaderLines.length > 0 && (
@@ -200,15 +216,15 @@ export default function Receipt({
                   )
                 )}
                 <div style={{ fontSize:16, fontWeight:700, marginTop:4 }}>{businessName || 'Hamar Mall'}</div>
-                <div style={{ fontSize:12, letterSpacing:2, textTransform:'uppercase', color:'#555', marginTop:2 }}>Receipt</div>
+                <div style={{ fontSize:12, letterSpacing:2, textTransform:'uppercase', color:'#000', marginTop:2 }}>Receipt</div>
                 {merchantNumber && (
-                  <div style={{ fontSize:12, color:'#555', marginTop:8 }}>Merchant: {merchantNumber}</div>
+                  <div style={{ fontSize:12, color:'#000', marginTop:8 }}>Merchant: {merchantNumber}</div>
                 )}
-                <div style={{ fontSize:12, marginTop: merchantNumber ? 0 : 8, color:'#555' }}>
+                <div style={{ fontSize:12, marginTop: merchantNumber ? 0 : 8, color:'#000' }}>
                   {dateStr} · {timeStr}
                 </div>
-                {orderId && <div style={{ fontSize:12, color:'#555' }}>Order: <strong>{orderId}</strong></div>}
-                {customerName && <div style={{ fontSize:12, color:'#555' }}>Customer: {customerName}</div>}
+                {orderId && <div style={{ fontSize:12, color:'#000' }}>Order: <strong>{orderId}</strong></div>}
+                {customerName && <div style={{ fontSize:12, color:'#000' }}>Customer: {customerName}</div>}
               </div>
 
               {/* Items */}
@@ -220,7 +236,7 @@ export default function Receipt({
                     <div key={item.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:6 }}>
                       <div style={{ flex:1 }}>
                         <div style={{ fontWeight:600 }}>{p.name}</div>
-                        <div style={{ fontSize:12, color:'#555' }}>
+                        <div style={{ fontSize:12, color:'#000' }}>
                           {item.qty} × ${p.price.toFixed(2)}
                         </div>
                       </div>
@@ -238,7 +254,7 @@ export default function Receipt({
                   <span>Subtotal</span><span>${subtotal.toFixed(2)}</span>
                 </div>
                 {discount > 0 && (
-                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4, color:'#444' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4, color:'#000' }}>
                     <span>Discount</span><span>-${discount.toFixed(2)}</span>
                   </div>
                 )}
@@ -261,14 +277,14 @@ export default function Receipt({
                       style={{ display:'block', margin:'0 auto' }}
                     />
                   )}
-                  <div style={{ fontSize:12, color:'#555', marginTop:6, letterSpacing:1, textTransform:'uppercase' }}>
+                  <div style={{ fontSize:12, color:'#000', marginTop:6, letterSpacing:1, textTransform:'uppercase' }}>
                     Scan to view this order
                   </div>
                 </div>
               )}
 
               {/* Footer */}
-              <div style={{ textAlign:'center', fontSize:12, color:'#555', marginTop:12 }}>
+              <div style={{ textAlign:'center', fontSize:12, color:'#000', marginTop:12 }}>
                 <div style={{ display:'inline-block', border:'1px solid #000', borderRadius:4, padding:'2px 8px', fontSize:12, fontWeight:700, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>
                   {pmLabel}
                 </div>

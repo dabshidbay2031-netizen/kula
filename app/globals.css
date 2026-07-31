@@ -676,6 +676,13 @@ ul { list-style: none; }
      --nav-h the POS was taller than the space available and its checkout
      controls sat underneath the bottom nav — unreachable for the cashier. */
   height: calc(100dvh - var(--header-h) - var(--app-pad-b));
+  /* The sale panel is parked off-screen at translateX(101%). Without clipping
+     here that parked panel still counts toward the scrollable area, so the
+     whole register slid sideways under a thumb — on a till screen that reads
+     as the app coming apart. `clip` (not `hidden`) so the vertical axis stays
+     `visible` and the product grid keeps its own scrolling. */
+  overflow-x: clip;
+  max-width: 100%;
 }
 .pos-store-tag {
   font-size: .8rem; font-weight: 700; color: var(--primary);
@@ -1600,8 +1607,23 @@ ul { list-style: none; }
     padding-bottom: 0;
     max-width: none;
     box-shadow: none;
+    transition: margin-left .22s var(--ease-out);
   }
   :root { --app-pad-b: 0; }
+
+  /* ── Collapsible sidebar ──────────────────────────────────────────
+     The three-bar mark in the header is the toggle: click to hide the
+     sidebar, click again to bring it back. The state is stamped on <html>
+     by components/Header.tsx and remembered in localStorage, so it survives
+     navigation and reloads. Sliding it out (rather than display:none) keeps
+     the motion readable and leaves the nav focusable-in-place while open. */
+  .sidebar {
+    transition: transform .22s var(--ease-out);
+  }
+  html[data-sidebar="hidden"] .sidebar { transform: translateX(-100%); }
+  html[data-sidebar="hidden"] #app    { margin-left: 0; }
+  html[data-sidebar="hidden"] .install-prompt { left: 20px; }
+
 
   /* ── Hide bottom nav on desktop ── */
   .bottom-nav { display: none; }
@@ -4603,10 +4625,10 @@ img, svg, video, canvas { max-width: 100%; }
   border-bottom-color: #92400E;
 }
 
-/* Desktop: hide the hamburger + drawer, show the logo icon */
+/* Desktop: the drawer is gone, but the three-bar button STAYS — it is the
+   sidebar show/hide toggle there (see the collapsible-sidebar block above). */
 .header-logo .logo-icon { display: none; }
 @media (min-width: 960px) {
-  .menu-btn     { display: none; }
   .mobile-menu  { display: none; }
   .header-logo .logo-icon { display: block; }
 }
@@ -4806,10 +4828,21 @@ img, svg, video, canvas { max-width: 100%; }
   .header { gap: 8px; padding: 0 10px; }
 }
 
-/* ── Prevent horizontal overflow on all mobile views ─────────── */
+/* ── Prevent horizontal overflow on all mobile views ───────────
+   `clip`, NOT `hidden`. They look interchangeable but are not: per spec, once
+   one axis is set to a non-`visible` value the other can no longer be
+   `visible`, so `overflow-x: hidden` silently computed `overflow-y: auto` and
+   turned EVERY page wrapper into its own nested scroll container. That is what
+   made pages opened straight from a link — a receipt QR landing on
+   /#/orders/… — refuse to scroll on a phone: the touch went to an inner
+   scroller that had nothing to scroll, instead of to the page.
+
+   `overflow-x: clip` clips the horizontal axis and leaves the vertical axis
+   `visible`, so the document scrolls normally. `html` already uses clip for
+   the same reason (see the top of this file). */
 @media (max-width: 959px) {
-  .page-anim { overflow-x: hidden; max-width: 100%; }
-  .route-anim { overflow-x: hidden; max-width: 100%; }
+  .page-anim  { overflow-x: clip; max-width: 100%; }
+  .route-anim { overflow-x: clip; max-width: 100%; }
 }
 
 /* ── Touch targets ≥ 44×44px for more elements ──────────────── */
@@ -4944,4 +4977,38 @@ img, svg, video, canvas { max-width: 100%; }
   .form-input, .pos-search-input, .search-page-input, .header-search input {
     font-size: 16px;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMPACT CARDS ON PHONES
+   ══════════════════════════════════════════════════════════════════════
+   Denser product tiles on a small screen: more of the shelf per scroll, and
+   the POS grid fits more items above the fold so a cashier taps instead of
+   scrolling mid-sale. Padding and type shrink together — shrinking only the
+   image leaves a card that is mostly whitespace.
+
+   Placed at the end of the file on purpose: these tie on specificity with the
+   base .product-card / .pos-item rules far above, and at equal specificity the
+   later rule wins. */
+@media (max-width: 480px) {
+  .product-grid { gap: 8px; padding: 0 10px 20px; }
+  .product-img  { aspect-ratio: 1 / 1; }
+  .product-body { padding: 8px 9px 10px; }
+  .product-name { font-size: .8rem; line-height: 1.25; }
+  .product-price { font-size: .95rem; }
+  .product-add-btn { padding: 7px 8px; font-size: .76rem; border-radius: 8px; }
+
+  /* POS tiles */
+  .pos-grid { gap: 8px; }
+  .pos-item { padding: 8px; border-radius: 10px; }
+  .pos-item-name { font-size: .78rem; }
+  .pos-item-price { font-size: .86rem; }
+  .pos-products { padding: 10px 10px; }
+}
+
+/* Three across on the widest phones / small tablets, where two columns leave
+   cards awkwardly large. */
+@media (min-width: 481px) and (max-width: 719px) {
+  .product-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .pos-grid     { grid-template-columns: repeat(3, 1fr); }
 }
