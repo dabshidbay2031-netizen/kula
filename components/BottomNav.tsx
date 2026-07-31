@@ -9,7 +9,6 @@ import { useCashier } from '@/context/CashierContext';
 import { roleFor } from '@/lib/roles';
 import { cashierCanAccess } from '@/lib/cashierPrivileges';
 import { useChatUnread } from '@/lib/useChatUnread';
-import { useInstall } from '@/lib/installApp';
 
 export default function BottomNav() {
   const pathname = usePathname();
@@ -22,30 +21,15 @@ export default function BottomNav() {
   const [mounted, setMounted] = useState(false);
   const notifs = unreadCount();
   const chatUnread = useChatUnread();
-  const { installed, install } = useInstall();
 
   useEffect(() => { setMounted(true); }, []);
 
-  /* Install stays in the nav for as long as the app isn't installed — no
-     dismiss, no "remind me later" flag. `installed` is read from the live
-     display mode (see lib/installApp), so deleting the app brings this
-     straight back instead of leaving a stale localStorage flag hiding it.
-     Rendered only after mount: the server can't know the display mode, and
-     guessing would mean a hydration mismatch on every installed launch. */
-  const showInstall = mounted && !installed;
+  /* Install lives at the right of the header now (components/Header.tsx), not
+     here: the bottom bar is for places you GO, and installing is an action.
+     Dropping that sixth slot also gives the five real destinations their full
+     labels back on a narrow phone. */
 
   const items = [
-    ...(showInstall ? [{
-      href: '#install',
-      label: 'Install',
-      onClick: install,
-      icon: (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="5" y="2" width="14" height="20" rx="2.5"/>
-          <path d="M12 7v8m0 0 3-3m-3 3-3-3"/>
-        </svg>
-      ),
-    }] : []),
     {
       href: '/',
       label: 'Explore',
@@ -126,7 +110,7 @@ export default function BottomNav() {
 
   return (
     /* `compact` shrinks the labels so a sixth slot still fits a 320px phone. */
-    <nav className={`bottom-nav${showInstall ? ' compact' : ''}`}>
+    <nav className="bottom-nav">
       {items.map(item => {
         const isActive = item.href === '/' ? pathname === '/' : (pathname?.startsWith(item.href) ?? false);
         const onClick  = (item as { onClick?: () => void }).onClick;

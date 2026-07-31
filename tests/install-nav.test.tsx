@@ -1,24 +1,33 @@
 /**
  * The permanent Install entry.
  *
- * The requirement is narrow and easy to break: Install stays in the nav until
- * the app is genuinely installed, and comes BACK if the app is deleted. That
- * rules out the obvious implementation — remembering "installed" or "dismissed"
- * in localStorage — because nothing tells a web app it was uninstalled, so any
- * stored flag outlives the app and hides the entry forever.
+ * It lives at the right of the HEADER (it is an action, not a destination —
+ * the bottom bar is for places you go). Wherever it sits, the requirement is
+ * narrow and easy to break: Install stays until the app is genuinely
+ * installed, and comes BACK if the app is deleted. That rules out the obvious
+ * implementation — remembering "installed" or "dismissed" in localStorage —
+ * because nothing tells a web app it was uninstalled, so any stored flag
+ * outlives the app and hides the entry forever.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-/* ── Stubs for everything BottomNav pulls in ─────────────────────── */
-vi.mock('@/context/AppContext',     () => ({ useApp:     () => ({ unreadCount: () => 0 }) }));
-vi.mock('@/context/AuthContext',    () => ({ useAuth:    () => ({ user: null, accountType: null }) }));
+/* ── Stubs for everything Header / BottomNav pull in ─────────────── */
+vi.mock('@/context/AppContext', () => ({
+  useApp: () => ({ unreadCount: () => 0, cartCount: () => 0, setCartOpen: () => {} }),
+}));
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: () => ({ user: null, accountType: null, signOut: async () => {} }),
+}));
 vi.mock('@/context/CashierContext', () => ({ useCashier: () => ({ cashier: null, logoutCashier: () => {} }) }));
 vi.mock('@/lib/useChatUnread',      () => ({ useChatUnread: () => 0 }));
+vi.mock('@/lib/useIsAdmin',         () => ({ useIsAdmin: () => ({ role: null, isAdmin: false, loading: false }) }));
+vi.mock('@/lib/assistant',          () => ({ openAssistant: () => {} }));
 vi.mock('@/lib/hashRouter', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   usePathname: () => '/',
+  useRouter: () => ({ push: () => {}, replace: () => {}, back: () => {} }),
 }));
 
 import InstallGuide from '@/components/InstallGuide';
@@ -40,10 +49,18 @@ function setDisplayMode(mode: 'browser' | 'standalone') {
 /**
  * Reload the store module so each test starts from a clean singleton.
  * Every test must go through this — lib/installApp keeps module-level state
- * and window listeners, so a statically imported BottomNav would carry the
+ * and window listeners, so a statically imported component would carry the
  * previous test's `appinstalled` across.
  */
 async function freshNav(mode: 'browser' | 'standalone' = 'browser') {
+  setDisplayMode(mode);
+  vi.resetModules();
+  const { default: Nav } = await import('@/components/Header');
+  return Nav;
+}
+
+/** The bottom bar, for asserting Install is NOT there any more. */
+async function freshBottomNav(mode: 'browser' | 'standalone' = 'browser') {
   setDisplayMode(mode);
   vi.resetModules();
   const { default: Nav } = await import('@/components/BottomNav');
@@ -96,13 +113,23 @@ describe('Install stays until the app is installed', () => {
     await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
   });
 
-  it('keeps the nav to one row of six by switching to compact labels', async () => {
+  it('sits in the header actions, not the bottom bar', async () => {
     const Nav = await freshNav('browser');
     const { container } = render(<Nav />);
     await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
+    // It belongs to the header's action row, beside the cart.
+    expect(container.querySelector('.header-actions .install-btn')).toBeTruthy();
+  });
+
+  it('is no longer a bottom-nav destination, which frees the sixth slot', async () => {
+    const Bottom = await freshBottomNav('browser');
+    const { container } = render(<Bottom />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText('Install')).not.toBeInTheDocument();
     const nav = container.querySelector('.bottom-nav')!;
-    expect(nav.className).toContain('compact');
-    expect(nav.querySelectorAll('.nav-item')).toHaveLength(6);
+    // Five real destinations, at full-size labels (no `compact` squeeze).
+    expect(nav.querySelectorAll('.nav-item')).toHaveLength(5);
+    expect(nav.className).not.toContain('compact');
   });
 });
 

@@ -10,6 +10,7 @@ import { roleFor, isBusinessRoute } from '@/lib/roles';
 import { cashierCanAccess } from '@/lib/cashierPrivileges';
 import { useIsAdmin } from '@/lib/useIsAdmin';
 import { openAssistant } from '@/lib/assistant';
+import { useInstall } from '@/lib/installApp';
 import BrandMark from '@/components/BrandMark';
 
 interface HeaderProps {
@@ -114,6 +115,7 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
   const [menuOpen, setMenuOpen] = useState(false);
   const notifs = unreadCount();
   const cartItems = cartCount();
+  const { installed, install } = useInstall();
 
   // Close the drawer whenever navigation happens
   useEffect(() => { setMenuOpen(false); }, [pathname]);
@@ -217,6 +219,22 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
         )}
 
         <div className="header-actions">
+          {/* Install — first in the actions row, so it reads before the cart.
+              Shown for exactly as long as the app isn't installed: `installed`
+              comes from the live display mode (lib/installApp), never a stored
+              flag, so deleting the app brings this straight back. Rendered
+              only after mount because the server cannot know the display mode
+              and guessing means a hydration mismatch on every launch. */}
+          {mounted && !installed && (
+            <button className="icon-btn install-btn" onClick={install}
+              aria-label="Install Hamar Mall" title="Install Hamar Mall">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="2.5"/>
+                <path d="M12 7v8m0 0 3-3m-3 3-3-3"/>
+              </svg>
+              <span className="install-btn-label">Install</span>
+            </button>
+          )}
           <button className="icon-btn" aria-label="Open cart" onClick={() => setCartOpen(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>

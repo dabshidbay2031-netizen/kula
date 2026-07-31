@@ -639,6 +639,114 @@ ul { list-style: none; }
   padding: 4px 10px; border-radius: 999px; white-space: nowrap;
 }
 .pos-products { flex: 1; overflow-y: auto; padding: 12px 16px; }
+
+/* Install, at the right of the header. Wider than the other icon buttons
+   because it carries a word — an unlabelled download glyph reads as "download
+   something", not "put this app on your phone". The label drops below 380px
+   where the header genuinely runs out of room. */
+.install-btn { width: auto; gap: 6px; padding: 0 10px; color: var(--primary); }
+.install-btn svg { width: 20px; height: 20px; }
+.install-btn-label { font-size: .78rem; font-weight: 700; }
+@media (max-width: 380px) { .install-btn-label { display: none; } }
+
+/* ── POS split: products left, the running sale right ──────────────────
+   `min-height: 0` on both the row and the left column is what lets the grid
+   scroll instead of stretching the page — a flex child defaults to
+   min-height:auto and refuses to shrink below its content. */
+.pos-body { flex: 1; display: flex; min-height: 0; position: relative; }
+.pos-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+.pos-side {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  width: min(86vw, 380px);
+  /* Phone: an overlay over the grid, parked off-screen until opened. */
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  transform: translateX(101%);
+  transition: transform .22s ease;
+  z-index: 40;
+}
+.pos-side.open { transform: translateX(0); }
+.pos-side-scrim {
+  position: absolute; inset: 0;
+  background: rgba(2, 6, 23, .38);
+  z-index: 30;
+}
+
+.pos-side-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.pos-side-title { font-weight: 800; font-size: .95rem; }
+.pos-side-close {
+  width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  font-size: 1rem; cursor: pointer; line-height: 1;
+}
+.pos-side-close:hover { border-color: var(--primary); color: var(--primary); }
+
+.pos-side-items { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.pos-side-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: .85rem; text-align: center; padding: 24px;
+}
+.pos-side-item {
+  padding: 9px 0; border-bottom: 1px solid var(--border-light, var(--border));
+}
+.pos-side-item:last-child { border-bottom: none; }
+.pos-side-item-top {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  font-size: .86rem; font-weight: 600;
+}
+.pos-side-item-bottom {
+  display: flex; align-items: center; justify-content: space-between; margin-top: 6px;
+}
+.pos-side-unit { font-size: .72rem; color: var(--text-muted); }
+
+.pos-side-foot {
+  flex-shrink: 0; padding: 12px 14px;
+  border-top: 1px solid var(--border); background: var(--bg);
+  display: flex; flex-direction: column; gap: 10px;
+  /* Clears the home indicator when the panel runs to the bottom of the screen. */
+  padding-bottom: calc(12px + var(--app-pad-b, 0px));
+}
+.pos-side-total-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-weight: 700; font-size: .9rem;
+}
+.pos-side-actions { display: flex; gap: 8px; }
+.pos-side-actions .btn { flex: 1; }
+
+/* The title-bar control that opens the panel — also the running total. */
+.pos-sale-toggle {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--primary); background: var(--primary); color: #fff;
+  font: inherit; font-size: .8rem; font-weight: 700; white-space: nowrap;
+}
+.pos-sale-toggle.is-open { background: transparent; color: var(--primary); }
+.pos-sale-toggle-count {
+  background: rgba(255,255,255,.25); border-radius: 999px;
+  padding: 1px 7px; font-size: .72rem;
+}
+.pos-sale-toggle.is-open .pos-sale-toggle-count { background: var(--primary); color: #fff; }
+.pos-sale-toggle-total { font-variant-numeric: tabular-nums; }
+
+/* From 900px the sale stops being an overlay and becomes a real column. It
+   still opens and closes — a cashier working a long product list can reclaim
+   the width — but nothing is dimmed behind it. */
+@media (min-width: 900px) {
+  .pos-side {
+    position: static; transform: none;
+    width: 0; border-left: none; overflow: hidden;
+    transition: width .2s ease;
+  }
+  .pos-side.open { width: 360px; border-left: 1px solid var(--border); }
+  .pos-side-scrim { display: none; }
+}
 .pos-search-bar {
   padding: 10px 16px;
   background: var(--surface);
@@ -4485,21 +4593,11 @@ img, svg, video, canvas { max-width: 100%; }
   flex-shrink: 0;
 }
 
-/* Inline cart bar (above product grid) */
-.pos-cart-bar {
-  background: var(--surface);
-  border-top: 2px solid var(--primary);
-  border-bottom: 1px solid var(--border);
-  padding: 8px 14px;
-  max-height: 210px;
-  overflow-y: auto;
-  flex-shrink: 0;
-}
-.pos-cart-bar-items { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-.pos-cart-bar-item  { display: flex; align-items: center; justify-content: space-between; font-size: .84rem; gap: 8px; }
+/* Sale-line typography. These were the inline cart bar that used to sit above
+   the product grid; the bar itself is gone (the sale is a side panel now) but
+   the line styles carry over to it unchanged. */
 .pos-cart-item-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pos-cart-item-total{ font-weight: 700; color: var(--primary); min-width: 52px; text-align: right; }
-.pos-cart-bar-footer{ display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-light); padding-top: 8px; }
 .pos-cart-total     { font-size: 1.1rem; font-weight: 700; color: var(--primary); }
 
 /* Qty stepper buttons */

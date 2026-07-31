@@ -117,6 +117,19 @@ export default function POSPage() {
   const [placingOrder, setPlacingOrder] = useState(false);
   const [lastOrderId, setLastOrderId] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
+  /** True when the receipt on screen is a plain counter print, not a sale. */
+  const [printOnly, setPrintOnly] = useState(false);
+
+  /* The sale panel. Desktop opens with it showing — there is room, and a
+     cashier needs the running total in view. A phone starts closed so the
+     product grid gets the whole screen; the total button in the title bar
+     opens it. */
+  const [saleOpen, setSaleOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches) {
+      setSaleOpen(true);
+    }
+  }, []);
   const [receiptData, setReceiptData] = useState<{
     items: CartItem[]; name: string; subtotal: number; discount: number; total: number; method: string;
   } | null>(null);
@@ -426,6 +439,31 @@ export default function POSPage() {
     toast(`Cart parked — "${label}"`, 'default');
   }
 
+  /**
+   * Print the current list WITHOUT selling anything.
+   *
+   * For the quote a customer asks for before deciding, or a picking slip for
+   * the back room. Deliberately not a sale: no order is created, so no order
+   * number and no QR are printed — a number that resolves to nothing on the
+   * order page is worse than no number at all. Nothing is deducted from stock
+   * and the cart is left exactly as it was, so the cashier can carry straight
+   * on to Pay.
+   */
+  function printCart() {
+    if (!posCart.length) return;
+    setLastOrderId('');
+    setPrintOnly(true);
+    setReceiptData({
+      items:    [...posCart],
+      name:     checkoutName.trim(),
+      subtotal: posTotal,
+      discount: 0,
+      total:    posTotal,
+      method:   '—',
+    });
+    setShowReceipt(true);
+  }
+
   function recallCart(parkedId: string) {
     const parked = parkedCarts.find(c => c.id === parkedId);
     if (!parked) return;
@@ -639,13 +677,23 @@ export default function POSPage() {
     );
   }
 
+  /** Leaving the receipt always clears the print-only flag, so the next
+   *  receipt can't inherit it and silently drop a real order's number. */
+  function closeReceipt() {
+    setShowReceipt(false);
+    setReceiptData(null);
+    setPrintOnly(false);
+  }
+
   /* ── Render: receipt ─────────────────────────────────────────── */
   if (showReceipt && receiptData) {
     return (
       <div className="page-anim">
         <Header showSearch={false} />
         <Receipt
-          orderId={lastOrderId}
+          /* No id on a plain print — that is what suppresses the order line
+             and the QR inside Receipt. */
+          orderId={printOnly ? undefined : lastOrderId}
           businessName={currentSupplier?.name}
           businessIcon={currentSupplier?.icon}
           customerName={receiptData.name}
@@ -655,20 +703,23 @@ export default function POSPage() {
           subtotal={receiptData.subtotal}
           discount={receiptData.discount}
           total={receiptData.total}
-          autoPrint={posSettings.autoPrint}
+          /* A print the cashier asked for goes straight to the dialog. */
+          autoPrint={printOnly ? true : posSettings.autoPrint}
           showQr={receiptCfg.receiptQr}
           merchantNumber={receiptCfg.merchantNumber}
           headerLines={[receiptCfg.receiptHeader1, receiptCfg.receiptHeader2, receiptCfg.receiptHeader3]
             .map(l => l.trim()).filter(Boolean)}
-          onClose={() => { setShowReceipt(false); setReceiptData(null); }}
+          onClose={closeReceipt}
         />
         <div style={{ padding: '0 16px 80px' }}>
           <button
             className="btn btn-primary"
             style={{ width: '100%', marginTop: 8 }}
-            onClick={() => { setShowReceipt(false); setReceiptData(null); }}
+            onClick={closeReceipt}
           >
-            ✚ New Sale
+            {/* A plain print left the sale untouched, so the cashier is going
+                back to it — not starting a new one. */}
+            {printOnly ? '← Back to the sale' : '✚ New Sale'}
           </button>
         </div>
       </div>
@@ -748,100 +799,150 @@ export default function POSPage() {
         {currentSupplier && (
           <span className="pos-store-tag">🏪 {currentSupplier.name}</span>
         )}
-      </div>
-
-      <div className="pos-search-bar" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input className="pos-search-input" style={{ flex: 1 }} placeholder="Search by name, SKU or barcode…"
-          value={search} onChange={e => setSearch(e.target.value)} />
-        <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
-          onClick={() => setScanOpen(true)} title="Scan a barcode to add to the sale">
-          📷 Scan
+        {/* The one control that opens the sale panel. It doubles as the running
+            total, so a cashier can see the sale even with the panel closed. */}
+        <button
+          className={`pos-sale-toggle${saleOpen ? ' is-open' : ''}`}
+          onClick={() => setSaleOpen(o => !o)}
+          aria-expanded={saleOpen}
+          aria-controls="pos-sale-panel"
+        >
+          🧾 Sale
+          {posCart.length > 0 && <span className="pos-sale-toggle-count">{posItemCount}</span>}
+          <span className="pos-sale-toggle-total">${posTotal.toFixed(2)}</span>
         </button>
       </div>
 
-      {/* Nothing to filter with a single category — "All" and that one chip
-          select the same products — so the row only earns its space at two. */}
-      {availableCategories.length > 1 && (
-        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-          <div className="chips-row">
-            <button className={`chip ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>All</button>
-            {availableCategories.map(cat => (
-              <button key={cat.id} className={`chip ${activeCategory === cat.id ? 'active' : ''}`}
-                onClick={() => setActiveCategory(cat.id)}>
-                {cat.icon} {cat.name}
-              </button>
-            ))}
+      {/* Two columns: products on the left, the sale on the right. */}
+      <div className="pos-body">
+        <div className="pos-main">
+          <div className="pos-search-bar" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input className="pos-search-input" style={{ flex: 1 }} placeholder="Search by name, SKU or barcode…"
+              value={search} onChange={e => setSearch(e.target.value)} />
+            <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+              onClick={() => setScanOpen(true)} title="Scan a barcode to add to the sale">
+              📷 Scan
+            </button>
           </div>
-        </div>
-      )}
 
-      {/* Inline cart summary */}
-      {posCart.length > 0 && (
-        <div className="pos-cart-bar">
-          <div className="pos-cart-bar-items">
-            {posCart.map(i => {
-              const p = products.find(x => x.id === i.id);
-              return (
-                <div key={i.id} className="pos-cart-bar-item">
-                  <span className="pos-cart-item-name">{p?.name ?? `#${i.id}`}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <button className="pos-qty-btn" onClick={() => changeQty(i.id, -1)}>−</button>
-                    <span style={{ minWidth: 18, textAlign: 'center' }}>{i.qty}</span>
-                    <button className="pos-qty-btn" onClick={() => changeQty(i.id, 1)}>+</button>
-                    <span className="pos-cart-item-total">${((p?.price ?? 0) * i.qty).toFixed(2)}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="pos-cart-bar-footer">
-            <span className="pos-cart-total">${posTotal.toFixed(2)}</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-sm btn-secondary" onClick={parkCart}>⏸ Park</button>
-              <button className="btn btn-sm btn-primary" onClick={openCheckout}>Pay →</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Product grid */}
-      <div className="pos-products">
-        {loading ? (
-          <div className="pos-grid">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <div key={i} className="pos-item">
-                <div className="skeleton" style={{ width: 48, height: 48, borderRadius: 8 }} />
-                <div className="skeleton" style={{ height: 12, width: '80%', borderRadius: 6 }} />
-                <div className="skeleton" style={{ height: 12, width: '50%', borderRadius: 6 }} />
+          {/* Nothing to filter with a single category — "All" and that one chip
+              select the same products — so the row only earns its space at two. */}
+          {availableCategories.length > 1 && (
+            <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+              <div className="chips-row">
+                <button className={`chip ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>All</button>
+                {availableCategories.map(cat => (
+                  <button key={cat.id} className={`chip ${activeCategory === cat.id ? 'active' : ''}`}
+                    onClick={() => setActiveCategory(cat.id)}>
+                    {cat.icon} {cat.name}
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">{search.trim() ? '🔍' : '🏪'}</div>
-            <div className="empty-title">{search.trim() ? 'No products found' : 'No products in your store yet'}</div>
-          </div>
-        ) : (
-          <div className="pos-grid">
-            {filtered.map(p => {
-              const stock  = getStock(p.id);
-              const inCart = posCart.find(i => i.id === p.id)?.qty ?? 0;
-              return (
-                <div key={p.id} className={`pos-item${inCart > 0 ? ' pos-in-cart' : ''}`}
-                  onClick={() => stock > 0 && addToPos(p.id)}
-                  style={stock === 0 ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
-                  {inCart > 0 && <span className="pos-item-badge">{inCart}</span>}
-                  <div className="pos-item-icon">
-                    <ProductImage imageUrl={p.imageUrl} imageUrls={p.imageUrls} name={p.name} style={{ borderRadius: 8 }} />
+            </div>
+          )}
+
+          {/* Product grid */}
+          <div className="pos-products">
+            {loading ? (
+              <div className="pos-grid">
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <div key={i} className="pos-item">
+                    <div className="skeleton" style={{ width: 48, height: 48, borderRadius: 8 }} />
+                    <div className="skeleton" style={{ height: 12, width: '80%', borderRadius: 6 }} />
+                    <div className="skeleton" style={{ height: 12, width: '50%', borderRadius: 6 }} />
                   </div>
-                  <span className="pos-item-name">{p.name}</span>
-                  <span className="pos-item-price">${p.price.toFixed(2)}</span>
-                  <span className="pos-item-stock">{stock === 0 ? 'Out of stock' : `${stock} in stock`}</span>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">{search.trim() ? '🔍' : '🏪'}</div>
+                <div className="empty-title">{search.trim() ? 'No products found' : 'No products in your store yet'}</div>
+              </div>
+            ) : (
+              <div className="pos-grid">
+                {filtered.map(p => {
+                  const stock  = getStock(p.id);
+                  const inCart = posCart.find(i => i.id === p.id)?.qty ?? 0;
+                  return (
+                    <div key={p.id} className={`pos-item${inCart > 0 ? ' pos-in-cart' : ''}`}
+                      onClick={() => stock > 0 && addToPos(p.id)}
+                      style={stock === 0 ? { opacity: 0.5, pointerEvents: 'none' } : {}}>
+                      {inCart > 0 && <span className="pos-item-badge">{inCart}</span>}
+                      <div className="pos-item-icon">
+                        <ProductImage imageUrl={p.imageUrl} imageUrls={p.imageUrls} name={p.name} style={{ borderRadius: 8 }} />
+                      </div>
+                      <span className="pos-item-name">{p.name}</span>
+                      <span className="pos-item-price">${p.price.toFixed(2)}</span>
+                      <span className="pos-item-stock">{stock === 0 ? 'Out of stock' : `${stock} in stock`}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* ── The sale ─────────────────────────────────────────────────
+            On a phone this is an overlay over the grid; from 900px up it is a
+            real column beside it. Either way the same markup, so there is only
+            one implementation of the running sale to keep correct. */}
+        <aside id="pos-sale-panel" className={`pos-side${saleOpen ? ' open' : ''}`} aria-label="Current sale">
+          <div className="pos-side-head">
+            <span className="pos-side-title">🧾 Current sale</span>
+            <button className="pos-side-close" onClick={() => setSaleOpen(false)} aria-label="Close the sale panel">
+              ✕
+            </button>
+          </div>
+
+          {posCart.length === 0 ? (
+            <div className="pos-side-empty">
+              <div style={{ fontSize: 30, marginBottom: 8 }}>🛒</div>
+              Tap a product to start a sale.
+            </div>
+          ) : (
+            <div className="pos-side-items">
+              {posCart.map(i => {
+                const p = products.find(x => x.id === i.id);
+                return (
+                  <div key={i.id} className="pos-side-item">
+                    <div className="pos-side-item-top">
+                      <span className="pos-cart-item-name">{p?.name ?? `#${i.id}`}</span>
+                      <span className="pos-cart-item-total">${((p?.price ?? 0) * i.qty).toFixed(2)}</span>
+                    </div>
+                    <div className="pos-side-item-bottom">
+                      <span className="pos-side-unit">${(p?.price ?? 0).toFixed(2)} each</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button className="pos-qty-btn" onClick={() => changeQty(i.id, -1)} aria-label={`One fewer ${p?.name ?? 'item'}`}>−</button>
+                        <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{i.qty}</span>
+                        <button className="pos-qty-btn" onClick={() => changeQty(i.id, 1)} aria-label={`One more ${p?.name ?? 'item'}`}>+</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="pos-side-foot">
+            <div className="pos-side-total-row">
+              <span>Total</span>
+              <span className="pos-cart-total">${posTotal.toFixed(2)}</span>
+            </div>
+            <div className="pos-side-actions">
+              <button className="btn btn-sm btn-secondary" disabled={posCart.length === 0} onClick={parkCart}>⏸ Park</button>
+              <button className="btn btn-sm btn-secondary" disabled={posCart.length === 0} onClick={printCart}
+                title="Print this list — no sale is recorded">
+                🖨️ Print
+              </button>
+            </div>
+            <button className="btn btn-primary btn-full" disabled={posCart.length === 0} onClick={openCheckout}>
+              Pay ${posTotal.toFixed(2)} →
+            </button>
+          </div>
+        </aside>
+
+        {/* Phone-only scrim; the panel is a column on desktop so it needs none. */}
+        {saleOpen && <div className="pos-side-scrim" onClick={() => setSaleOpen(false)} />}
       </div>
 
       {/* ── Parked carts modal ── */}

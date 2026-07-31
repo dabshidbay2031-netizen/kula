@@ -6,7 +6,13 @@ import { isLogoUrl } from '@/components/StoreAvatar';
 import type { CartItem, Product } from '@/lib/types';
 
 interface ReceiptProps {
-  orderId:       string;
+  /**
+   * The order this receipt belongs to. OMIT IT for a plain print — a counter
+   * slip that is not a sale: no order number is printed and no QR is drawn,
+   * because there is no order for either of them to point at. Printing an id
+   * that resolves to nothing is worse than printing none at all.
+   */
+  orderId?:      string;
   businessName?: string;
   businessIcon?: string;
   customerName:  string;
@@ -41,6 +47,10 @@ export default function Receipt({
   // only one or two lines doesn't print blank rows).
   const visibleHeaderLines = (headerLines ?? []).map(l => l.trim()).filter(Boolean);
 
+  /** No order → nothing to number and nothing to scan. */
+  const isPlainPrint = !orderId;
+  const wantQr = showQr && !isPlainPrint;
+
   /**
    * QR code → live order page. Scanning it (store owner or customer)
    * opens the REAL order from the database — current status, items,
@@ -51,24 +61,25 @@ export default function Receipt({
   const [qrDataUrl, setQrDataUrl] = useState('');
 
   useEffect(() => {
+    if (!wantQr) { setQrDataUrl(''); return; }
     let cancelled = false;
     QRCode.toDataURL(orderUrl, { width: 132, margin: 1 })
       .then(url => { if (!cancelled) setQrDataUrl(url); })
       .catch(() => { /* receipt still works without the QR */ });
     return () => { cancelled = true; };
-  }, [orderUrl]);
+  }, [orderUrl, wantQr]);
 
   // Auto-print (POS setting): when the QR is shown, give it a beat to render so
   // the printed copy isn't missing it; when the QR is hidden, print right away.
   const printedRef = useRef(false);
   useEffect(() => {
     if (!autoPrint || printedRef.current) return;
-    if (showQr && !qrDataUrl) return;   // wait for the QR to finish rendering
+    if (wantQr && !qrDataUrl) return;   // wait for the QR to finish rendering
     printedRef.current = true;
     const t = setTimeout(() => handlePrint(), 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPrint, qrDataUrl, showQr]);
+  }, [autoPrint, qrDataUrl, wantQr]);
 
   function handlePrint() {
     const content = ref.current?.innerHTML ?? '';
@@ -79,7 +90,7 @@ export default function Receipt({
       <html>
       <head>
         <meta charset="utf-8"/>
-        <title>Receipt ${orderId}</title>
+        <title>${orderId ? `Receipt ${orderId}` : 'Receipt'}</title>
         <style>
           * { margin:0; padding:0; box-sizing:border-box; }
           body { font-family: 'Courier New', monospace; font-size: 13px; color:#000; background:#fff; padding:16px; }
@@ -187,7 +198,7 @@ export default function Receipt({
                 <div style={{ fontSize:11, marginTop: merchantNumber ? 0 : 8, color:'#555' }}>
                   {dateStr} · {timeStr}
                 </div>
-                <div style={{ fontSize:11, color:'#555' }}>Order: <strong>{orderId}</strong></div>
+                {orderId && <div style={{ fontSize:11, color:'#555' }}>Order: <strong>{orderId}</strong></div>}
                 {customerName && <div style={{ fontSize:11, color:'#555' }}>Customer: {customerName}</div>}
               </div>
 
@@ -227,8 +238,9 @@ export default function Receipt({
                 </div>
               </div>
 
-              {/* QR — scan to open the live order (POS can hide it via Settings) */}
-              {showQr && (
+              {/* QR — scan to open the live order (POS can hide it via Settings).
+                  Never drawn on a plain print: there is no order to open. */}
+              {wantQr && (
                 <div style={{ textAlign:'center', padding:'12px 0', borderBottom:'2px dashed #000' }}>
                   {qrDataUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
