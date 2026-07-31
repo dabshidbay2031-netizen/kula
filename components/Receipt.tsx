@@ -95,23 +95,32 @@ export default function Receipt({
           * { margin:0; padding:0; box-sizing:border-box; }
           body { font-family: 'Courier New', monospace; font-size: 13px; color:#000; background:#fff; padding:16px; }
           .receipt { max-width: 320px; margin: 0 auto; }
-          .r-head { text-align:center; padding-bottom:12px; border-bottom:2px dashed #000; margin-bottom:12px; }
-          .r-biz-icon { font-size:28px; }
-          .r-biz-name { font-size:16px; font-weight:700; margin-top:4px; }
-          .r-title { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#555; margin-top:2px; }
-          .r-meta { font-size:11px; margin:8px 0 0; color:#555; }
-          .r-items { padding:12px 0; border-bottom:2px dashed #000; }
-          .r-item { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
-          .r-item-left { flex:1; }
-          .r-item-name { font-weight:600; }
-          .r-item-qty { font-size:11px; color:#555; }
-          .r-item-price { font-weight:600; white-space:nowrap; margin-left:8px; }
-          .r-totals { padding:12px 0; border-bottom:2px dashed #000; }
-          .r-row { display:flex; justify-content:space-between; margin-bottom:4px; }
-          .r-row.grand { font-size:15px; font-weight:700; border-top:1px solid #000; padding-top:6px; margin-top:6px; }
-          .r-row.discount { color:#444; }
-          .r-footer { text-align:center; font-size:11px; color:#555; margin-top:12px; }
-          .r-pay-badge { display:inline-block; border:1px solid #000; border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
+
+          /* ── Thermal-printer legibility ──────────────────────────────────
+             A thermal head is 1-BIT: each dot is either burned or it isn't,
+             so there is no grey ink. Anything grey gets halftoned into a
+             sparse scatter of dots and, at 10–11px, most of a glyph's strokes
+             fall between those dots and never reach the paper — which is why
+             the date, order number, "1 × $5.00" and the footer came out as
+             ghosts while the bold black lines printed solid.
+
+             The receipt body is built with INLINE styles (that is what the
+             screen preview uses), and those inline greys are copied into this
+             document with the markup. A normal rule can't beat an inline
+             style, so this override is deliberately !important — it is the
+             only thing that can force them black. The on-screen preview is a
+             separate document and keeps its softer greys.
+
+             The small print is 12px at source (it was 10–11px): below roughly
+             12px a 203dpi head drops strokes even in solid black. */
+          .receipt, .receipt * {
+            color: #000 !important;
+            opacity: 1 !important;
+            text-shadow: none !important;
+            filter: none !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
           @media print {
             body { padding:0; }
             @page { margin:8mm; }
@@ -191,15 +200,15 @@ export default function Receipt({
                   )
                 )}
                 <div style={{ fontSize:16, fontWeight:700, marginTop:4 }}>{businessName || 'Hamar Mall'}</div>
-                <div style={{ fontSize:11, letterSpacing:2, textTransform:'uppercase', color:'#555', marginTop:2 }}>Receipt</div>
+                <div style={{ fontSize:12, letterSpacing:2, textTransform:'uppercase', color:'#555', marginTop:2 }}>Receipt</div>
                 {merchantNumber && (
-                  <div style={{ fontSize:11, color:'#555', marginTop:8 }}>Merchant: {merchantNumber}</div>
+                  <div style={{ fontSize:12, color:'#555', marginTop:8 }}>Merchant: {merchantNumber}</div>
                 )}
-                <div style={{ fontSize:11, marginTop: merchantNumber ? 0 : 8, color:'#555' }}>
+                <div style={{ fontSize:12, marginTop: merchantNumber ? 0 : 8, color:'#555' }}>
                   {dateStr} · {timeStr}
                 </div>
-                {orderId && <div style={{ fontSize:11, color:'#555' }}>Order: <strong>{orderId}</strong></div>}
-                {customerName && <div style={{ fontSize:11, color:'#555' }}>Customer: {customerName}</div>}
+                {orderId && <div style={{ fontSize:12, color:'#555' }}>Order: <strong>{orderId}</strong></div>}
+                {customerName && <div style={{ fontSize:12, color:'#555' }}>Customer: {customerName}</div>}
               </div>
 
               {/* Items */}
@@ -211,7 +220,7 @@ export default function Receipt({
                     <div key={item.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:6 }}>
                       <div style={{ flex:1 }}>
                         <div style={{ fontWeight:600 }}>{p.name}</div>
-                        <div style={{ fontSize:11, color:'#555' }}>
+                        <div style={{ fontSize:12, color:'#555' }}>
                           {item.qty} × ${p.price.toFixed(2)}
                         </div>
                       </div>
@@ -252,15 +261,15 @@ export default function Receipt({
                       style={{ display:'block', margin:'0 auto' }}
                     />
                   )}
-                  <div style={{ fontSize:10, color:'#555', marginTop:6, letterSpacing:1, textTransform:'uppercase' }}>
+                  <div style={{ fontSize:12, color:'#555', marginTop:6, letterSpacing:1, textTransform:'uppercase' }}>
                     Scan to view this order
                   </div>
                 </div>
               )}
 
               {/* Footer */}
-              <div style={{ textAlign:'center', fontSize:11, color:'#555', marginTop:12 }}>
-                <div style={{ display:'inline-block', border:'1px solid #000', borderRadius:4, padding:'2px 8px', fontSize:10, fontWeight:700, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>
+              <div style={{ textAlign:'center', fontSize:12, color:'#555', marginTop:12 }}>
+                <div style={{ display:'inline-block', border:'1px solid #000', borderRadius:4, padding:'2px 8px', fontSize:12, fontWeight:700, letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>
                   {pmLabel}
                 </div>
                 <div>Thank you for your purchase!</div>

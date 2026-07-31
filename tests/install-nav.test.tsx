@@ -1,19 +1,20 @@
 /**
  * The permanent Install entry.
  *
- * It lives at the right of the HEADER (it is an action, not a destination —
- * the bottom bar is for places you go). Wherever it sits, the requirement is
- * narrow and easy to break: Install stays until the app is genuinely
- * installed, and comes BACK if the app is deleted. That rules out the obvious
- * implementation — remembering "installed" or "dismissed" in localStorage —
- * because nothing tells a web app it was uninstalled, so any stored flag
- * outlives the app and hides the entry forever.
+ * It lives with the NAVIGATION ITEMS — the sidebar on desktop, the menu drawer
+ * on a phone — not in the bottom bar and not in the header's action row.
+ *
+ * Wherever it sits, the requirement is narrow and easy to break: Install stays
+ * until the app is genuinely installed, and comes BACK if the app is deleted.
+ * That rules out the obvious implementation — remembering "installed" or
+ * "dismissed" in localStorage — because nothing tells a web app it was
+ * uninstalled, so any stored flag outlives the app and hides the entry forever.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-/* ── Stubs for everything Header / BottomNav pull in ─────────────── */
+/* ── Stubs for everything Header / BottomNav pull in ─────────────────── */
 vi.mock('@/context/AppContext', () => ({
   useApp: () => ({ unreadCount: () => 0, cartCount: () => 0, setCartOpen: () => {} }),
 }));
@@ -67,7 +68,7 @@ async function freshBottomNav(mode: 'browser' | 'standalone' = 'browser') {
   return Nav;
 }
 
-const installLink = () => screen.queryByText('Install');
+const installLink = () => screen.queryByText('Install app');
 
 beforeEach(() => { localStorage.clear(); setDisplayMode('browser'); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -84,16 +85,16 @@ describe('Install stays until the app is installed', () => {
     render(<Nav />);
     // Give the mount effect a chance to add it — it must not.
     await act(async () => { await Promise.resolve(); });
-    expect(screen.queryByText('Install')).not.toBeInTheDocument();
+    expect(screen.queryByText('Install app')).not.toBeInTheDocument();
   });
 
   it('never persists an "installed" flag, so an uninstall brings it back', async () => {
     const Nav = await freshNav('browser');
     const { unmount } = render(<Nav />);
-    await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Install app')).toBeInTheDocument());
 
     await act(async () => { window.dispatchEvent(new Event('appinstalled')); });
-    await waitFor(() => expect(screen.queryByText('Install')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Install app')).not.toBeInTheDocument());
 
     // Nothing written anywhere. A fresh load (the app having been deleted, so
     // display-mode is 'browser' again) shows it once more.
@@ -102,7 +103,7 @@ describe('Install stays until the app is installed', () => {
 
     const Nav2 = await freshNav('browser');
     render(<Nav2 />);
-    await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Install app')).toBeInTheDocument());
   });
 
   it('survives dismissing the first-run banner', async () => {
@@ -110,22 +111,24 @@ describe('Install stays until the app is installed', () => {
     localStorage.setItem('pwa_dismissed', '1');
     const Nav = await freshNav('browser');
     render(<Nav />);
-    await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Install app')).toBeInTheDocument());
   });
 
-  it('sits in the header actions, not the bottom bar', async () => {
+  it('sits with the navigation items, not in the header action row', async () => {
     const Nav = await freshNav('browser');
     const { container } = render(<Nav />);
-    await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
-    // It belongs to the header's action row, beside the cart.
-    expect(container.querySelector('.header-actions .install-btn')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Install app')).toBeInTheDocument());
+    // A menu item beside the other destinations…
+    expect(container.querySelector('.mobile-menu-list')?.textContent).toContain('Install app');
+    // …and never a button in the header's cart/alerts row.
+    expect(container.querySelector('.header-actions')?.textContent ?? '').not.toContain('Install');
   });
 
   it('is no longer a bottom-nav destination, which frees the sixth slot', async () => {
     const Bottom = await freshBottomNav('browser');
     const { container } = render(<Bottom />);
     await act(async () => { await Promise.resolve(); });
-    expect(screen.queryByText('Install')).not.toBeInTheDocument();
+    expect(screen.queryByText('Install app')).not.toBeInTheDocument();
     const nav = container.querySelector('.bottom-nav')!;
     // Five real destinations, at full-size labels (no `compact` squeeze).
     expect(nav.querySelectorAll('.nav-item')).toHaveLength(5);
@@ -138,14 +141,14 @@ describe('what Install does', () => {
     const prompt = vi.fn(async () => {});
     const Nav = await freshNav('browser');
     render(<Nav />);
-    await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Install app')).toBeInTheDocument());
 
     await act(async () => {
       window.dispatchEvent(Object.assign(new Event('beforeinstallprompt'), {
         prompt, userChoice: Promise.resolve({ outcome: 'dismissed' }),
       }));
     });
-    await userEvent.click(screen.getByText('Install'));
+    await userEvent.click(screen.getByText('Install app'));
 
     await waitFor(() => expect(prompt).toHaveBeenCalled());
   });
@@ -153,9 +156,9 @@ describe('what Install does', () => {
   it('opens the how-to sheet when the browser offers no prompt', async () => {
     const Nav = await freshNav('browser');
     render(<><Nav /><InstallGuide /></>);
-    await waitFor(() => expect(screen.getByText('Install')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Install app')).toBeInTheDocument());
 
-    await userEvent.click(screen.getByText('Install'));
+    await userEvent.click(screen.getByText('Install app'));
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
   });

@@ -236,6 +236,25 @@ export default function Sidebar() {
             );
           })}
 
+          {/* Install — one of the navigation items, not a pinned footer
+              button. It stays for exactly as long as the app isn't installed:
+              `installed` is read from the live display mode (lib/installApp),
+              never a stored flag, so deleting the app brings it straight back.
+              The `mounted` guard keeps it out of the server render, which
+              cannot know whether this is already the installed app. */}
+          {mounted && !installed && (
+            <button className="sidebar-item sidebar-install-btn" onClick={install}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+              <span className="sidebar-item-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="5" y="2" width="14" height="20" rx="2.5"/>
+                  <path d="M12 7v8m0 0 3-3m-3 3-3-3"/>
+                </svg>
+              </span>
+              <span className="sidebar-item-label">Install app</span>
+            </button>
+          )}
+
           {/* AI help assistant — opens the chat panel (no longer a floating button) */}
           <button className="sidebar-item" onClick={openAssistant} style={{ background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
             <span className="sidebar-item-icon">
@@ -250,21 +269,6 @@ export default function Sidebar() {
 
         {/* Cart button */}
         <div className="sidebar-footer">
-          {/* Install lives in the pinned footer so it's visible without
-              scrolling, and stays until the app is actually installed. The
-              `mounted` guard keeps it out of the server render, which can't
-              know whether this is already the installed app. */}
-          {mounted && !installed && (
-            <button className="sidebar-item sidebar-install-btn" onClick={install}>
-              <span className="sidebar-item-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="5" y="2" width="14" height="20" rx="2.5"/>
-                  <path d="M12 7v8m0 0 3-3m-3 3-3-3"/>
-                </svg>
-              </span>
-              <span className="sidebar-item-label">Install app</span>
-            </button>
-          )}
           {cashier && (
             <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-light)', marginBottom: 4 }}>
               <div style={{ fontSize: '.78rem', color: 'var(--text-light)' }}>Logged in as</div>

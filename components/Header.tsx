@@ -219,22 +219,9 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
         )}
 
         <div className="header-actions">
-          {/* Install — first in the actions row, so it reads before the cart.
-              Shown for exactly as long as the app isn't installed: `installed`
-              comes from the live display mode (lib/installApp), never a stored
-              flag, so deleting the app brings this straight back. Rendered
-              only after mount because the server cannot know the display mode
-              and guessing means a hydration mismatch on every launch. */}
-          {mounted && !installed && (
-            <button className="icon-btn install-btn" onClick={install}
-              aria-label="Install Hamar Mall" title="Install Hamar Mall">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="5" y="2" width="14" height="20" rx="2.5"/>
-                <path d="M12 7v8m0 0 3-3m-3 3-3-3"/>
-              </svg>
-              <span className="install-btn-label">Install</span>
-            </button>
-          )}
+          {/* Install is NOT here. It sits with the navigation items in the
+              sidebar / menu drawer, where the rest of the app's destinations
+              live — the header row is for the cart and alerts only. */}
           <button className="icon-btn" aria-label="Open cart" onClick={() => setCartOpen(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
@@ -297,6 +284,26 @@ export default function Header({ searchQuery = '', onSearch, showSearch = true, 
               </svg>
               Global Dashboard
             </Link>
+          )}
+
+          {/* Install — a menu item alongside the rest of the navigation.
+              This drawer IS the sidebar on a phone (the real .sidebar is
+              desktop-only), so without it here Install would have no home on
+              mobile at all now that it has left the bottom bar. Same rule as
+              everywhere else: shown until the app is genuinely installed,
+              read from the live display mode and never from a stored flag. */}
+          {mounted && !installed && (
+            <button
+              className="mobile-menu-link"
+              onClick={() => { setMenuOpen(false); install(); }}
+              style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="2.5"/>
+                <path d="M12 7v8m0 0 3-3m-3 3-3-3"/>
+              </svg>
+              Install app
+            </button>
           )}
 
           {/* AI help assistant — opens the chat panel (no longer a floating button) */}

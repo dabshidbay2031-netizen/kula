@@ -24,8 +24,8 @@ export default function BottomNav() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  /* Install lives at the right of the header now (components/Header.tsx), not
-     here: the bottom bar is for places you GO, and installing is an action.
+  /* Install is a navigation item now — Sidebar on desktop, the Header menu
+     drawer on a phone — not a slot here: the bottom bar is for places you GO.
      Dropping that sixth slot also gives the five real destinations their full
      labels back on a narrow phone. */
 

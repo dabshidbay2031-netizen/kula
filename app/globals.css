@@ -50,6 +50,32 @@
 /* ── Reset ─────────────────────────────────────── */
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
 html { -webkit-text-size-adjust:100%; scroll-behavior:smooth; overflow-x: clip; }
+
+/* ── Native-feel touch behaviour ───────────────────────────────────────
+   Four browser defaults that, left alone, are the loudest "this is a web
+   page" tells inside an installed app. */
+
+/* 1. No grey flash rectangle on every tap. */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* 2. Android's pull-to-refresh RELOADS the whole app — mid-sale at the POS
+      that is destructive — and iOS rubber-bands to reveal the page behind.
+      `contain` keeps the gesture inside the app without disabling scrolling. */
+html, body { overscroll-behavior-y: contain; }
+
+/* 3 + 4. Chrome must not be selectable or long-pressable: dragging across a
+   button should not highlight its label, and holding a product image should
+   not raise the iOS "Save Image / Copy" sheet.
+   Deliberately scoped to controls and chrome — NOT to the whole body. Prices,
+   order numbers, phone numbers and addresses stay selectable, because copying
+   an order number is something people genuinely need to do. */
+button, a, .nav-item, .sidebar-item, .mobile-menu-link, .chip,
+.header, .bottom-nav, .sidebar, .pos-item, .pos-sale-toggle,
+.product-card, .badge, .modal-header, .page-title-bar {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 body {
   font-family: var(--font-body-stack);
   background: var(--bg);
@@ -72,6 +98,9 @@ h1, h2, h3, h4, h5, h6,
 }
 button { font-family: inherit; cursor: pointer; border: none; outline: none; }
 input, select, textarea { font-family: inherit; outline: none; }
+
+/* The 16px touch-input rule lives at the very END of this file — see the note
+   there. Putting it here silently loses to `.form-input` further down. */
 a { text-decoration: none; color: inherit; }
 img { display: block; max-width: 100%; }
 ul { list-style: none; }
@@ -98,16 +127,31 @@ ul { list-style: none; }
 }
 
 /* ── Header ────────────────────────────────────── */
+/*
+ * The app is served with `viewport-fit=cover` and an iOS status bar style of
+ * `black-translucent`, which together tell iOS to draw the page UNDERNEATH the
+ * status bar. That is only correct if the top inset is paid back — otherwise
+ * the clock, battery and Dynamic Island sit on top of the logo and search box
+ * on every notched iPhone. The bottom inset was always handled (--app-pad-b);
+ * the top never was.
+ *
+ * `height` becomes the content height PLUS the inset, so the bar grows rather
+ * than squashing what is inside it. `env()` is 0 on every device without a
+ * notch, so nothing changes on Android or desktop.
+ */
 .header {
   position: sticky;
   top: 0;
   z-index: 100;
   background: rgba(255,255,255,.82);
   border-bottom: 1px solid var(--border);
-  height: var(--header-h);
+  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: 0;
   gap: 12px;
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
@@ -639,15 +683,6 @@ ul { list-style: none; }
   padding: 4px 10px; border-radius: 999px; white-space: nowrap;
 }
 .pos-products { flex: 1; overflow-y: auto; padding: 12px 16px; }
-
-/* Install, at the right of the header. Wider than the other icon buttons
-   because it carries a word — an unlabelled download glyph reads as "download
-   something", not "put this app on your phone". The label drops below 380px
-   where the header genuinely runs out of room. */
-.install-btn { width: auto; gap: 6px; padding: 0 10px; color: var(--primary); }
-.install-btn svg { width: 20px; height: 20px; }
-.install-btn-label { font-size: .78rem; font-weight: 700; }
-@media (max-width: 380px) { .install-btn-label { display: none; } }
 
 /* ── POS split: products left, the running sale right ──────────────────
    `min-height: 0` on both the row and the left column is what lets the grid
@@ -4885,4 +4920,28 @@ img, svg, video, canvas { max-width: 100%; }
    nav clearance to absorb. Keep a small bottom inset on the footer itself. */
 @media (min-width: 961px) {
   .site-footer { padding-bottom: 24px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TOUCH INPUT SIZE — must stay LAST in this file
+   ══════════════════════════════════════════════════════════════════════
+   iOS zooms the page in whenever a focused field is under 16px and never
+   zooms back out. That used to be masked by `maximum-scale=1` in the viewport,
+   which killed the auto-zoom but ALSO blocked pinch-zoom for everyone — a WCAG
+   1.4.4 failure. The viewport no longer sets maximumScale, so the fields
+   themselves have to clear the bar.
+
+   POSITION MATTERS. A media query adds no specificity, so this ties with the
+   plain `.form-input { font-size: .9rem }` rule about 900 lines above and with
+   the `.form-input { font-size: .85rem }` inside a width breakpoint below it.
+   At equal specificity the LAST rule wins, so this block has to sit at the end
+   of the stylesheet. Measured: placed earlier, inputs still computed 14.08px.
+
+   Touch screens only — 16px is an iOS input constraint, not a design choice,
+   and forcing it on desktop would inflate every admin table filter. */
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea,
+  .form-input, .pos-search-input, .search-page-input, .header-search input {
+    font-size: 16px;
+  }
 }
