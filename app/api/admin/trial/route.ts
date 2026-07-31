@@ -21,7 +21,8 @@ const MAX_TRIAL_DAYS = 90;
 const DAY_MS = 86_400_000;
 
 export async function POST(req: Request) {
-  const denied = await requireAdmin(req);
+  // FULL admin only — a granted trial is unbilled subscription time, i.e. revenue.
+  const denied = await requireAdmin(req, { role: 'admin' });
   if (denied) return denied;
 
   const body = await req.json().catch(() => ({}));
@@ -70,7 +71,8 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const denied = await requireAdmin(req);
+  // FULL admin only — revoking a trial can cut off a paying-adjacent store.
+  const denied = await requireAdmin(req, { role: 'admin' });
   if (denied) return denied;
 
   const supplierId = parseInt(new URL(req.url).searchParams.get('supplierId') ?? '', 10);

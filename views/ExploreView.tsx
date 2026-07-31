@@ -7,11 +7,13 @@ import ProductCard from '@/components/ProductCard';
 import ProductImage from '@/components/ProductImage';
 import { useApp } from '@/context/AppContext';
 import { useAuth } from '@/context/AuthContext';
-import { CATEGORIES, SUBCATEGORIES } from '@/lib/data';
+import { CATEGORIES, SUBCATEGORIES, stockedCategories } from '@/lib/data';
 import { useClaimProduct } from '@/lib/useClaimProduct';
 import { useShuffleSeed } from '@/lib/shuffle';
 import { personalizeMix, useAffinity, useRecordInterest } from '@/lib/affinity';
 import { useHeroBanner } from '@/lib/useHeroBanner';
+import { useFeedTiers } from '@/lib/useFeedTiers';
+import { rankAndDiversify, tierFor } from '@/lib/feedRanking';
 import { districtFor, MOGADISHU_DISTRICTS } from '@/lib/districts';
 
 export default function ExplorePage() {
@@ -24,6 +26,7 @@ export default function ExplorePage() {
   const { products, loading } = state;
   const { canClaim, claim, isMine, claimingId } = useClaimProduct();
   const hero = useHeroBanner();
+  const feedTiers = useFeedTiers();
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeSub, setActiveSub] = useState('all');
@@ -31,6 +34,32 @@ export default function ExplorePage() {
 
   // Subcategories for the selected category (only shown once a category is picked)
   const subCats = activeCategory !== 'all' ? (SUBCATEGORIES[activeCategory] ?? []) : [];
+
+  /**
+   * Only offer categories that actually have something to show — the same rule
+   * the POS shelf already follows. A chip for a category with no products
+   * filters the grid to nothing, which reads as a broken page rather than an
+   * empty shelf.
+   *
+   * Measured against the *discoverable* pool: B2B-only stock the shopper can't
+   * see, and anything an admin marked Hidden, must not keep a chip alive.
+   */
+  const availableCategories = useMemo(() => {
+    const discoverable = products.filter(p =>
+      (!p.isB2b || accountType === 'business' || accountType === 'supplier') &&
+      tierFor(p, feedTiers) !== 'hidden');
+    return stockedCategories(discoverable);
+  }, [products, accountType, feedTiers]);
+
+  // A category can empty out while it is selected (last unit sold, product
+  // hidden by an admin). Its chip disappears but the selection would persist,
+  // leaving an empty grid and no lit chip to explain why — fall back to All.
+  useEffect(() => {
+    if (activeCategory !== 'all' && !availableCategories.some(c => c.id === activeCategory)) {
+      setActiveCategory('all');
+      setActiveSub('all');
+    }
+  }, [availableCategories, activeCategory]);
 
   // O(1) lookups instead of Array.includes in every card render
   const wishlistSet  = useMemo(() => new Set(state.wishlist),    [state.wishlist]);
@@ -104,12 +133,26 @@ export default function ExplorePage() {
         (p.tags  ?? []).some(t => t.toLowerCase().includes(q))
       );
     }
-    return list;
-  }, [products, affinity, shuffleSeed, search, activeCategory, activeSub, activeDistrict, recognizedDistrictBySupplier, accountType]);
+    // Rank LAST, over exactly what this view will show.
+    //
+    // Ranking before the filters only holds the "≤N cards from one store per 10"
+    // invariant on the unfiltered grid: narrowing to a category preserves
+    // relative order but not the spacing, so an electronics-heavy store could
+    // still take 6 of the first 10 under the Electronics chip. Running the pass
+    // over the filtered list makes the cap true in EVERY view, and it is cheaper
+    // — the scheduler walks a shorter list, and this memo already recomputes on
+    // each filter change regardless. Empty tiers ⇒ returns the list unchanged.
+    return rankAndDiversify(list, feedTiers, verifiedBySupplier, shuffleSeed);
+  }, [products, affinity, shuffleSeed, feedTiers, verifiedBySupplier, search, activeCategory, activeSub, activeDistrict, recognizedDistrictBySupplier, accountType]);
 
+  // Best Sellers renders on the Explore page, so it is part of Explore discovery
+  // and must honour Hidden too — otherwise a product an admin hid would keep
+  // showing here, in the most prominent strip on the page. (Only Hidden applies:
+  // Reduced/Low bias the *draw* into the grid, and this row is ranked by sales.)
   const bestSellers = useMemo(() =>
-    [...products].sort((a, b) => b.sold - a.sold).slice(0, 8),
-  [products]);
+    products.filter(p => tierFor(p, feedTiers) !== 'hidden')
+      .sort((a, b) => b.sold - a.sold).slice(0, 8),
+  [products, feedTiers]);
 
   // ── Pagination: 300 products per page ─────────────────────────
   // Replaces infinite scroll — a bounded page keeps the DOM small (≤300 cards
@@ -205,7 +248,7 @@ export default function ExplorePage() {
           >
             All
           </button>
-          {CATEGORIES.map(cat => (
+          {availableCategories.map(cat => (
             <button
               key={cat.id}
               className={`chip ${activeCategory === cat.id ? 'active' : ''}`}

@@ -20,6 +20,8 @@ import {
   buildReportBuckets, currentPeriodRange, type Period,
 } from '@/lib/dashboardPeriod';
 import { buildDashboardReportHtml, openReportForPrint, reportFileName } from '@/lib/dashboardReport';
+import { summarise, totals as creditTotals, outstanding, type ExportInvoice } from '@/lib/creditExport';
+import { downloadWithAuth } from '@/lib/downloadFile';
 import type { CartItem, Order, Product } from '@/lib/types';
 
 /**
@@ -299,6 +301,48 @@ export default function BusinessDashboardView() {
       .slice(0, 5);
   }, [periodOrders, prodById, myProductIds]);
   const maxTopUnits = topProductsPeriod[0]?.units || 1;
+
+  /* ── Credit book: what customers still owe this store ──────────────────
+     Sales figures alone hide the shop's real position — takings can look
+     healthy while most of it went out on credit ("deyn") and never came back.
+     This is money already earned but not yet collected, so it is deliberately
+     kept separate from revenue rather than folded into it. */
+  const [invoices, setInvoices] = useState<ExportInvoice[]>([]);
+  const [downloadingCredit, setDownloadingCredit] = useState(false);
+
+  useEffect(() => {
+    const sid = currentSupplier?.id;
+    if (sid == null) { setInvoices([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/invoices?supplierId=${sid}`, { headers: await authHeaders() });
+        if (!r.ok) return;                       // ledger not deployed / no access — panel stays hidden
+        const rows = await r.json();
+        if (!cancelled && Array.isArray(rows)) setInvoices(rows as ExportInvoice[]);
+      } catch { /* a dashboard must still render without the ledger */ }
+    })();
+    return () => { cancelled = true; };
+  }, [currentSupplier?.id]);
+
+  /** Debts raised inside the selected period — matches every other figure on
+   *  screen, so "this month" means the same thing everywhere. */
+  const periodCredit = useMemo(() => {
+    const from = buckets[0]?.start.getTime() ?? 0;
+    const inPeriod = invoices.filter(i => new Date(i.createdAt).getTime() >= from);
+    return summarise(inPeriod);
+  }, [invoices, buckets]);
+
+  const periodOwed = useMemo(() => creditTotals(periodCredit), [periodCredit]);
+
+  /** Everything still unpaid, whenever it was rung up. The period view answers
+   *  "how much went out on credit this month"; this answers "how much am I owed
+   *  in total" — the number a shop actually chases, and old debt is exactly
+   *  what a period window hides. */
+  const allTimeOwed = useMemo(
+    () => invoices.reduce((s, i) => s + outstanding(i), 0),
+    [invoices],
+  );
 
   const recentOrders = useMemo(
     () => [...myOrders].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).slice(0, 8),
@@ -660,6 +704,103 @@ export default function BusinessDashboardView() {
           ))}
         </div>
       </div>
+
+      {/* ── Customer credit (deyn) ──────────────────
+          Only rendered once the store actually keeps a credit book — a shop
+          that sells cash-only should not be shown an empty debt panel. */}
+      {invoices.length > 0 && (
+        <div className="dash-card">
+          <div className="dash-card-header">
+            <div className="dash-card-title">🧾 Owed by customers</div>
+            <span className="dash-card-sub">{PERIOD_META[period].sub.toLowerCase()}</span>
+          </div>
+
+          <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:14 }}>
+            <div style={{ flex:'1 1 150px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'10px 12px' }}>
+              <div style={{ fontSize:'.68rem', fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-muted)' }}>
+                Given on credit · {PERIOD_META[period].label}
+              </div>
+              <div style={{ fontSize:'1.25rem', fontWeight:800, marginTop:3 }}>${periodOwed.billed.toFixed(2)}</div>
+              <div style={{ fontSize:'.7rem', color:'var(--text-muted)' }}>
+                {periodOwed.invoices} invoice{periodOwed.invoices !== 1 ? 's' : ''} · ${periodOwed.paid.toFixed(2)} repaid
+              </div>
+            </div>
+            <div style={{ flex:'1 1 150px', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'10px 12px' }}>
+              <div style={{ fontSize:'.68rem', fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-muted)' }}>
+                Still owed · all time
+              </div>
+              <div style={{ fontSize:'1.25rem', fontWeight:800, marginTop:3, color: allTimeOwed > 0 ? 'var(--danger)' : 'var(--text)' }}>
+                ${allTimeOwed.toFixed(2)}
+              </div>
+              <div style={{ fontSize:'.7rem', color:'var(--text-muted)' }}>
+                across every unpaid invoice
+              </div>
+            </div>
+          </div>
+
+          {periodCredit.length === 0 ? (
+            <div style={{ fontSize:'.85rem', color:'var(--text-muted)', padding:'6px 0' }}>
+              No credit given in {PERIOD_META[period].sub.toLowerCase()}.
+            </div>
+          ) : (
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'.85rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign:'left',  padding:'8px 10px', fontSize:'.68rem', textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-muted)', borderBottom:'1px solid var(--border)' }}>Customer</th>
+                    <th style={{ textAlign:'right', padding:'8px 10px', fontSize:'.68rem', textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-muted)', borderBottom:'1px solid var(--border)' }}>Billed</th>
+                    <th style={{ textAlign:'right', padding:'8px 10px', fontSize:'.68rem', textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-muted)', borderBottom:'1px solid var(--border)' }}>Paid</th>
+                    <th style={{ textAlign:'right', padding:'8px 10px', fontSize:'.68rem', textTransform:'uppercase', letterSpacing:'.06em', color:'var(--text-muted)', borderBottom:'1px solid var(--border)' }}>Still owes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periodCredit.map(c => (
+                    <tr key={c.customerId}>
+                      <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', fontWeight:600 }}>{c.customerName}</td>
+                      <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right' }}>${c.billed.toFixed(2)}</td>
+                      <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right' }}>${c.paid.toFixed(2)}</td>
+                      <td style={{ padding:'8px 10px', borderBottom:'1px solid var(--border)', textAlign:'right', fontWeight:800, color: c.outstanding > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                        ${c.outstanding.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td style={{ padding:'9px 10px', fontWeight:800, borderTop:'2px solid var(--text)' }}>
+                      Total · {PERIOD_META[period].label}
+                    </td>
+                    <td style={{ padding:'9px 10px', textAlign:'right', fontWeight:800, borderTop:'2px solid var(--text)' }}>${periodOwed.billed.toFixed(2)}</td>
+                    <td style={{ padding:'9px 10px', textAlign:'right', fontWeight:800, borderTop:'2px solid var(--text)' }}>${periodOwed.paid.toFixed(2)}</td>
+                    <td style={{ padding:'9px 10px', textAlign:'right', fontWeight:800, borderTop:'2px solid var(--text)', color:'var(--danger)' }}>${periodOwed.outstanding.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ marginTop: 12 }}
+            disabled={downloadingCredit}
+            onClick={async () => {
+              setDownloadingCredit(true);
+              try {
+                await downloadWithAuth(
+                  `/api/invoices/export?supplierId=${currentSupplier?.id}&period=${period}&shape=summary`,
+                  `credits-${period}.csv`,
+                );
+              } catch (e) {
+                toast(e instanceof Error ? e.message : 'Download failed', 'error');
+              } finally {
+                setDownloadingCredit(false);
+              }
+            }}
+          >
+            {downloadingCredit ? 'Preparing…' : '⬇️ Download this list (CSV)'}
+          </button>
+        </div>
+      )}
 
       {/* ── Recent Orders ──────────────────────────── */}
       <div className="dash-card" style={{ marginBottom: 80 }}>

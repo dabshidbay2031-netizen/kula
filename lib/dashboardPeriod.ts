@@ -172,6 +172,89 @@ export function buildReportBuckets(period: Period, now: Date = new Date()): Peri
   return out;
 }
 
+/* ── Export ranges ────────────────────────────────────────────────────────
+   Downloads accept either a named period (day/week/month/year/all) or an
+   explicit start–end pair, so an operator can pull "3 Mar to 17 Mar" and not
+   only whole calendar periods. */
+
+export interface ResolvedRange {
+  /** null = unbounded (the "all" backup). */
+  start: Date | null;
+  end:   Date | null;
+  /** Goes in the filename and on the report header. */
+  label: string;
+}
+
+/**
+ * Somalia is UTC+3 all year with no daylight saving, so a calendar day for a
+ * Mogadishu shop is a fixed offset — no timezone database needed.
+ *
+ * This matters: the server runs in UTC, so `new Date('2026-03-04')` starts the
+ * day three hours early and a range for "the 4th" would sweep in the evening of
+ * the 3rd and miss the last three hours of the 4th. Pinning the offset makes an
+ * exported day mean the same day the shopkeeper worked.
+ */
+const TZ_OFFSET = '+03:00';
+
+/** Strict YYYY-MM-DD → the instant that day begins in Mogadishu. */
+function parseLocalDate(s: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00${TZ_OFFSET}`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+const DMY = (d: Date) => new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Africa/Mogadishu', day: 'numeric', month: 'short', year: 'numeric',
+}).format(d);
+
+/**
+ * Resolve the range a download should cover.
+ *
+ * `from`/`to` win over `period` when supplied. `to` is INCLUSIVE — a user
+ * asking for 3 Mar to 3 Mar means that whole day, so the exclusive end is
+ * pushed to the following midnight. Getting this wrong silently exports an
+ * empty file for a single-day request, which looks like "we have no data".
+ *
+ * Returns a string when the input is unusable, so the caller can 400 with a
+ * message instead of quietly exporting the wrong window.
+ */
+export function resolveExportRange(
+  params: { period?: string | null; from?: string | null; to?: string | null },
+  now: Date = new Date(),
+): ResolvedRange | { error: string } {
+  const from = (params.from ?? '').trim();
+  const to   = (params.to   ?? '').trim();
+
+  if (from || to) {
+    if (!from || !to) return { error: 'Both from and to are required for a custom range (YYYY-MM-DD)' };
+    const start = parseLocalDate(from);
+    const endDay = parseLocalDate(to);
+    if (!start || !endDay) return { error: 'from and to must be dates in YYYY-MM-DD format' };
+    if (endDay.getTime() < start.getTime()) return { error: 'from must be on or before to' };
+    const end = new Date(endDay.getTime() + 24 * 60 * 60 * 1000);   // inclusive `to`
+    return { start, end, label: from === to ? DMY(start) : `${DMY(start)} – ${DMY(endDay)}` };
+  }
+
+  const period = (params.period ?? 'month').toLowerCase();
+  if (period === 'all') return { start: null, end: null, label: 'All time' };
+  if (period !== 'day' && period !== 'week' && period !== 'month' && period !== 'year') {
+    return { error: 'period must be day, week, month, year or all' };
+  }
+  const r = currentPeriodRange(period as Period, now);
+  return { start: r.start, end: r.end, label: r.label };
+}
+
+/** Slug for a filename: "2026-03-04_2026-03-17" or "all-time". */
+export function rangeSlug(range: ResolvedRange): string {
+  if (!range.start || !range.end) return 'all-time';
+  const iso = (d: Date) => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Mogadishu', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
+  const lastDay = new Date(range.end.getTime() - 1);
+  const a = iso(range.start), b = iso(lastDay);
+  return a === b ? a : `${a}_${b}`;
+}
+
 /** Compact money for axis ticks and bar captions: 1234 → "$1.2k". */
 export function shortMoney(n: number): string {
   const abs = Math.abs(n);

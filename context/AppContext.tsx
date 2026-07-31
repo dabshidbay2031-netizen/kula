@@ -185,14 +185,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 22000);
 
     // 2. Fetch fresh data in background (stale-while-revalidate)
+    //
+    // The controller and the "did we give up on purpose" flag live out here so
+    // the effect's cleanup can cancel an in-flight refresh when the provider
+    // unmounts. Without that, leaving the page mid-fetch left the request
+    // running and its abort surfaced as a scary console error on every reload.
+    const ctrl = new AbortController();
+    let timedOut  = false;   // our own 20s budget fired
+    let cancelled = false;   // the component went away
+    // 20s budget: dev cold-compiles and slow mobile connections were
+    // regularly blowing through the old 7s limit, leaving an empty
+    // catalog until a manual reload.
+    const timeout = setTimeout(() => { timedOut = true; ctrl.abort(); }, 20000);
+
     async function loadFresh() {
       try {
-        const ctrl = new AbortController();
-        // 20s budget: dev cold-compiles and slow mobile connections were
-        // regularly blowing through the old 7s limit, leaving an empty
-        // catalog until a manual reload.
-        const timeout = setTimeout(() => ctrl.abort(), 20000);
-
         const [products, suppliers, notifications] = await Promise.all([
           fetchIfChanged('/api/products',      ctrl.signal),
           fetchIfChanged('/api/suppliers',     ctrl.signal),
@@ -217,13 +224,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           writeCache(CACHE.notifications, notifications);
         }
       } catch (err) {
-        console.error('[AppContext] data fetch failed:', err);
+        // An abort is something WE caused, not a fault to shout about:
+        //   • cancelled → the user navigated away mid-refresh. Nothing to say.
+        //   • timedOut  → the 20s budget elapsed. The cached catalog is still on
+        //     screen, so this is a degraded refresh, not a failure — warn, don't
+        //     error, and say what actually happened.
+        // Anything else is a real fetch failure and still logs as an error.
+        const aborted = err instanceof DOMException && err.name === 'AbortError';
+        if (aborted && cancelled) return;
+        if (aborted && timedOut) {
+          console.warn('[AppContext] refresh timed out after 20s — showing cached data');
+        } else if (!aborted) {
+          console.error('[AppContext] data fetch failed:', err);
+        }
       } finally {
+        clearTimeout(timeout);
         clearTimeout(safetyTimer);
-        dispatch({ type: 'SET_LOADING', payload: false });
+        // Don't touch state after unmount — the spinner is gone with the tree.
+        if (!cancelled) dispatch({ type: 'SET_LOADING', payload: false });
       }
     }
     loadFresh();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      clearTimeout(safetyTimer);
+      ctrl.abort();
+    };
   }, []);
 
   /* ── Persist cart + wishlist ─────────────────────────────── */

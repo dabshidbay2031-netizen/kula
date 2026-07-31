@@ -7,7 +7,7 @@ import ProductCard from '@/components/ProductCard';
 import ProductImage from '@/components/ProductImage';
 import { useApp } from '@/context/AppContext';
 import { useAuth } from '@/context/AuthContext';
-import { CATEGORIES, SUBCATEGORIES } from '@/lib/data';
+import { CATEGORIES, SUBCATEGORIES, stockedCategories } from '@/lib/data';
 import { useClaimProduct } from '@/lib/useClaimProduct';
 import { useIncrementalList } from '@/lib/useIncrementalList';
 import { recordInterest } from '@/lib/affinity';
@@ -290,6 +290,26 @@ function SearchInner() {
 
   const subCats = activeCategory !== 'all' ? (SUBCATEGORIES[activeCategory] ?? []) : [];
 
+  /**
+   * Only chip categories that have something to find, so a tap can never land
+   * on an empty result set.
+   *
+   * Unlike Explore, this deliberately IGNORES the admin's Hidden tier: Hidden
+   * means "out of Explore discovery", and a hidden product must stay findable
+   * by search. Filtering it out here would make its whole category unreachable.
+   */
+  const availableCategories = useMemo(() =>
+    stockedCategories(products.filter(p =>
+      !p.isB2b || accountType === 'business' || accountType === 'supplier')),
+  [products, accountType]);
+
+  useEffect(() => {
+    if (activeCategory !== 'all' && !availableCategories.some(c => c.id === activeCategory)) {
+      setActiveCategory('all');
+      setActiveSubCat('all');
+    }
+  }, [availableCategories, activeCategory]);
+
   const filtered = useMemo(() => {
     let list = products;
     if (activeCategory !== 'all') list = list.filter(p => p.category === activeCategory);
@@ -505,7 +525,7 @@ function SearchInner() {
       {/* ── Category chips ── */}
       <div className="chips-row" style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
         <button className={`chip ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => { setActiveCategory('all'); setActiveSubCat('all'); }}>All</button>
-        {CATEGORIES.map(cat => (
+        {availableCategories.map(cat => (
           <button
             key={cat.id}
             className={`chip ${activeCategory === cat.id ? 'active' : ''}`}

@@ -87,7 +87,10 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const denied = await requireAdmin(req);
+  // FULL admin only. Approving a payout releases real money, and `semi_admin`
+  // is advertised in the UI as view-only — a bare requireAdmin() accepted it,
+  // so a "view-only" account could approve its own withdrawal with one request.
+  const denied = await requireAdmin(req, { role: 'admin' });
   if (denied) return denied;
 
   const user = await getAuthUser(req);

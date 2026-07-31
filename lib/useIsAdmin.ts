@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { authHeaders } from '@/lib/clientAuth';
 
 export type AdminRole = 'admin' | 'semi_admin' | null;
 
@@ -25,11 +26,19 @@ export function useIsAdmin(): { role: AdminRole; isAdmin: boolean; loading: bool
     let cancelled = false;
     if (!user?.id) { setRole(null); setLoading(false); return; }
     setLoading(true);
-    fetch(`/api/admin/check?uid=${encodeURIComponent(user.id)}`)
-      .then(r => r.json())
-      .then(d => { if (!cancelled) setRole((d?.role as AdminRole) ?? null); })
-      .catch(() => { if (!cancelled) setRole(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    // Identity comes from the JWT, not from a uid in the query string — the
+    // route deliberately refuses to answer about anyone but the caller.
+    (async () => {
+      try {
+        const r = await fetch('/api/admin/check', { headers: await authHeaders() });
+        const d = await r.json();
+        if (!cancelled) setRole((d?.role as AdminRole) ?? null);
+      } catch {
+        if (!cancelled) setRole(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, [user?.id]);
 

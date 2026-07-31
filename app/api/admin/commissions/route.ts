@@ -77,7 +77,9 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const denied = await requireAdmin(req);
+  // FULL admin only — marking a commission paid settles money owed to an agent.
+  // Reading the ledger (GET) stays open to any admin role.
+  const denied = await requireAdmin(req, { role: 'admin' });
   if (denied) return denied;
 
   const body = await req.json().catch(() => ({}));

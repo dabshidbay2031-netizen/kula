@@ -6,6 +6,7 @@ import { useApp }  from '@/context/AppContext';
 import type { Supplier, Product, Order } from '@/lib/types';
 import { Link } from '@/lib/hashRouter';
 import { authHeaders } from '@/lib/clientAuth';
+import { downloadWithAuth } from '@/lib/downloadFile';
 import { getSupabase } from '@/lib/supabase';
 import ProductImage from '@/components/ProductImage';
 import StoreAvatar from '@/components/StoreAvatar';
@@ -13,10 +14,15 @@ import Pagination from '@/components/Pagination';
 import { usePagination } from '@/lib/usePagination';
 import { COMMISSION_PER_STORE, COMMISSION_INSTALMENTS } from '@/lib/agentCommission';
 import type { HeroBanner } from '@/app/api/settings/hero/route';
+import { CATEGORIES, SUBCATEGORIES } from '@/lib/data';
+import {
+  type FeedTiers, type Tier, TIER_OPTIONS, TIER_COLOR,
+  DEFAULT_CAP_PER_10, countRules, EMPTY_TIERS,
+} from '@/lib/feedTiers';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
 type AdminRole = 'admin' | 'semi_admin' | null;
-type Tab = 'overview' | 'businesses' | 'review' | 'agents' | 'products' | 'orders' | 'users' | 'team' | 'storefront' | 'payouts';
+type Tab = 'overview' | 'businesses' | 'review' | 'agents' | 'products' | 'orders' | 'users' | 'team' | 'storefront' | 'feed' | 'exports' | 'payouts';
 
 /** A shop's payout request, as served by /api/admin/payouts. */
 interface AdminPayout {
@@ -68,6 +74,32 @@ function RoleBadge({ role }: { role: string }) {
     }}>
       {isAdmin ? '👑 Admin' : '👁️ Viewer'}
     </span>
+  );
+}
+
+/**
+ * The tier picker used throughout Feed Controls. Tinted to its current value so
+ * a long table of stores reads at a glance — a page of identical grey selects
+ * makes it impossible to see which rows are actually set.
+ */
+function TierSelect({ value, onChange }: { value: Tier; onChange: (t: Tier) => void }) {
+  const c = TIER_COLOR[value];
+  return (
+    <select
+      className="form-input"
+      value={value}
+      onChange={e => onChange(e.target.value as Tier)}
+      style={{
+        background: value === 'normal' ? 'var(--surface)' : c + '18',
+        color:      value === 'normal' ? 'var(--text)'    : c,
+        border:     `1px solid ${value === 'normal' ? 'var(--border)' : c + '55'}`,
+        fontWeight: value === 'normal' ? 400 : 700,
+        padding:    '6px 8px',
+        fontSize:   '.8rem',
+      }}
+    >
+      {TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
   );
 }
 
@@ -133,9 +165,13 @@ export default function AdminDashboard() {
   // Edit states
   const [editBiz,    setEditBiz]    = useState<Supplier | null>(null);
   const [editProd,   setEditProd]   = useState<Product  | null>(null);
-  // window.confirm is blocked in the Next 16 / Turbopack runtime, so product
-  // deletion is gated by the in-app confirm modal below (setConfirmDeleteProd).
-  const [confirmDeleteProd, setConfirmDeleteProd] = useState<{ id: number; name: string } | null>(null);
+  // window.confirm is blocked in the Next 16 / Turbopack runtime — it returns
+  // undefined instead of prompting, so `if (!confirm(...)) return` silently
+  // cancels the action and the button looks dead. EVERY destructive action here
+  // is therefore gated by an in-app modal, never by window.confirm.
+  const [confirmDeleteProd,   setConfirmDeleteProd]   = useState<{ id: number; name: string } | null>(null);
+  const [confirmDeleteBiz,    setConfirmDeleteBiz]    = useState<{ id: number; name: string } | null>(null);
+  const [confirmRemoveAdmin,  setConfirmRemoveAdmin]  = useState<AdminEntry | null>(null);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
   /* ── Search / filter state ────────────────────────────────────────────────
@@ -229,6 +265,23 @@ export default function AdminDashboard() {
   const [savingHero,   setSavingHero]   = useState(false);
   const [uploadingHero,setUploadingHero]= useState(false);
 
+  /* Feed Controls — Explore ranking tiers. `null` while loading; the draft is
+     edited locally and only PUT on Save, so a half-finished set of rules is
+     never live on the storefront. */
+  const [feed,        setFeed]        = useState<FeedTiers | null>(null);
+  const [savingFeed,  setSavingFeed]  = useState(false);
+  const [feedSection, setFeedSection] = useState<'stores' | 'categories' | 'products'>('stores');
+  const [feedStoreQuery, setFeedStoreQuery] = useState('');
+  const [feedProdQuery,  setFeedProdQuery]  = useState('');
+
+  /* Data exports — the off-site backup of every store's books. `exportStoreId`
+     of 0 means "every store", which is the disaster-recovery case. */
+  const [exportStoreId, setExportStoreId] = useState(0);
+  const [exportPeriod,  setExportPeriod]  = useState<'day' | 'week' | 'month' | 'year' | 'all' | 'custom'>('month');
+  const [exportFrom,    setExportFrom]    = useState('');
+  const [exportTo,      setExportTo]      = useState('');
+  const [exporting,     setExporting]     = useState(false);
+
   // Team management
   const [showAddAdmin,  setShowAddAdmin]  = useState(false);
   const [newAdminUid,   setNewAdminUid]   = useState('');
@@ -242,11 +295,19 @@ export default function AdminDashboard() {
   /* ── Auth check ────────────────────────────────────────────────── */
   useEffect(() => {
     if (!user?.id) { setChecking(false); return; }
-    fetch(`/api/admin/check?uid=${user.id}`)
-      .then(r => r.json())
-      .then(d => setRole(d.role ?? null))
-      .catch(() => setRole(null))
-      .finally(() => setChecking(false));
+    // The route reads the caller's identity from the JWT, so the token must go
+    // with it — it no longer accepts a uid in the query string.
+    (async () => {
+      try {
+        const r = await fetch('/api/admin/check', { headers: await authHeaders() });
+        const d = await r.json();
+        setRole(d.role ?? null);
+      } catch {
+        setRole(null);
+      } finally {
+        setChecking(false);
+      }
+    })();
   }, [user?.id]);
 
   /* ── Load data ─────────────────────────────────────────────────── */
@@ -280,7 +341,23 @@ export default function AdminDashboard() {
 
     try {
       if (t === 'overview') {
-        setStats(await getJson('/api/admin/stats') as AdminStats);
+        // Stores come too, not just stats: the to-do list counts the review
+        // queue from `businesses`, and without them a store a field agent has
+        // submitted stays invisible on the very screen meant to show
+        // "everything waiting on an admin" — until you happen to open another
+        // tab. The suppliers list is public and already cached.
+        const [s, sup] = await Promise.all([
+          getJson('/api/admin/stats'),
+          getJson('/api/suppliers', false),
+        ]);
+        setStats(s as AdminStats);
+        setBusinesses(asArray<Supplier>(sup));
+      } else if (t === 'review') {
+        // Its own branch — the review queue is derived from `businesses`.
+        // Previously 'review' matched nothing here (a no-op that still toggled
+        // the shared `loading` flag) while a second effect raced to fetch the
+        // same list.
+        setBusinesses(asArray<Supplier>(await getJson('/api/suppliers', false)));
       } else if (t === 'businesses') {
         setBusinesses(asArray<Supplier>(await getJson('/api/suppliers', false)));
       } else if (t === 'products') {
@@ -301,6 +378,21 @@ export default function AdminDashboard() {
         setAdmins(asArray<AdminEntry>(await getJson('/api/admin/admins')));
       } else if (t === 'storefront') {
         setHero(await getJson('/api/settings/hero', false) as HeroBanner);
+      } else if (t === 'exports') {
+        // The store picker needs the roster; nothing else is fetched until the
+        // operator actually asks for a download.
+        setBusinesses(asArray<Supplier>(await getJson('/api/suppliers', false)));
+      } else if (t === 'feed') {
+        // Tiers are set against stores and products, so both lists come too —
+        // otherwise the tab renders empty until another tab happens to load them.
+        const [ft, sup, prods] = await Promise.all([
+          getJson('/api/settings/feed-tiers', false),
+          getJson('/api/suppliers', false),
+          getJson('/api/products', false),
+        ]);
+        setFeed((ft ?? EMPTY_TIERS) as FeedTiers);
+        setBusinesses(asArray<Supplier>(sup));
+        setProducts(asArray<Product>(prods));
       }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Could not load this page.');
@@ -401,10 +493,9 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!role) return;
-    // The review queue reads the businesses list; the agent desk has its own.
+    // The agent desk has its own endpoints; every other tab is served by load().
     if (tab === 'agents') { loadAgents(); loadCommissions(); }
-    if (tab === 'review') load('businesses');
-  }, [tab, role, loadAgents, loadCommissions, load]);
+  }, [tab, role, loadAgents, loadCommissions]);
 
 
   const decidePayout = async (id: number, status: 'approved' | 'rejected') => {
@@ -475,8 +566,13 @@ export default function AdminDashboard() {
     else        { toast('Save failed', 'error'); }
   };
 
-  const deleteBiz = async (id: number, name: string) => {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  /** Opens the in-app confirm — see doDeleteBiz for why window.confirm is out. */
+  const deleteBiz = (id: number, name: string) => setConfirmDeleteBiz({ id, name });
+
+  const doDeleteBiz = async () => {
+    if (!confirmDeleteBiz) return;
+    const { id } = confirmDeleteBiz;
+    setConfirmDeleteBiz(null);
     const res = await fetch(`/api/suppliers/${id}`, { method:'DELETE', headers: await authHeaders() });
     if (res.ok) { toast('Deleted', 'default'); load('businesses'); }
     else        { toast('Delete failed', 'error'); }
@@ -630,6 +726,73 @@ export default function AdminDashboard() {
     else        { const e = await res.json().catch(() => ({})); toast(e.error ?? 'Save failed', 'error'); }
   };
 
+  /* ── Feed Controls actions ─────────────────────────────────────── */
+  /**
+   * Set (or clear) one tier assignment in the draft.
+   *
+   * Choosing "Normal" DELETES the key rather than storing `'normal'`. Normal is
+   * the resolved default, so a stored 'normal' on a subcategory would silently
+   * override its parent category's tier — the operator would set Food → Low and
+   * wonder why the seasonings under it stayed at full weight. Absent means
+   * "inherit", which is the behaviour the precedence chain documents.
+   */
+  const setFeedTier = (map: 'stores' | 'categories' | 'subs' | 'products', id: string | number, tier: Tier) => {
+    setFeed(f => {
+      const cur  = { ...(f ?? EMPTY_TIERS) };
+      const next = { ...(cur[map] ?? {}) } as Record<string, Tier>;
+      if (tier === 'normal') delete next[String(id)];
+      else                   next[String(id)] = tier;
+      return { ...cur, [map]: Object.keys(next).length ? next : undefined };
+    });
+  };
+
+  const feedTierOf = (map: 'stores' | 'categories' | 'subs' | 'products', id: string | number): Tier =>
+    (feed?.[map] as Record<string, Tier> | undefined)?.[String(id)] ?? 'normal';
+
+  const saveFeed = async () => {
+    if (!feed) return;
+    setSavingFeed(true);
+    const res = await fetch('/api/settings/feed-tiers', {
+      method: 'PUT', headers: await authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(feed),
+    });
+    setSavingFeed(false);
+    if (res.ok) { toast('Feed rules saved ✓', 'success'); setFeed(await res.json()); }
+    else        { const e = await res.json().catch(() => ({})); toast(e.error ?? 'Save failed', 'error'); }
+  };
+
+  const clearFeedRules = () => {
+    setFeed(f => ({ capPer10: f?.capPer10 ?? DEFAULT_CAP_PER_10 }));
+    toast('All rules cleared — press Save to apply', 'default');
+  };
+
+  /* ── Data export actions ───────────────────────────────────────── */
+  const runExport = async () => {
+    const params = new URLSearchParams();
+    if (exportStoreId) params.set('storeId', String(exportStoreId));
+
+    if (exportPeriod === 'custom') {
+      // Caught here rather than at the API so the operator gets the message on
+      // the form they are looking at, not as a failed download.
+      if (!exportFrom || !exportTo) { toast('Pick both a start and an end date', 'error'); return; }
+      if (exportFrom > exportTo)    { toast('The start date must be on or before the end date', 'error'); return; }
+      params.set('from', exportFrom);
+      params.set('to',   exportTo);
+    } else {
+      params.set('period', exportPeriod);
+    }
+
+    setExporting(true);
+    try {
+      await downloadWithAuth(`/api/admin/exports?${params.toString()}`, 'hamarmall-export.zip');
+      toast('Export downloaded ✓', 'success');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Export failed', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   /* ── Team actions ──────────────────────────────────────────────── */
   const addAdmin = async () => {
     if (!newAdminUid.trim()) { toast('Enter a user UID', 'error'); return; }
@@ -658,13 +821,24 @@ export default function AdminDashboard() {
     else        { toast('Failed', 'error'); }
   };
 
-  const removeAdmin = async (a: AdminEntry) => {
+  const removeAdmin = (a: AdminEntry) => {
     if (a.userId === user.id) { toast("You can't remove yourself", 'error'); return; }
-    if (!confirm(`Remove "${a.name || a.userId}" from admin team?`)) return;
-    const res = await fetch(`/api/admin/admins/${a.id}`, { method:'DELETE', headers: await authHeaders() });
+    setConfirmRemoveAdmin(a);
+  };
+
+  const doRemoveAdmin = async () => {
+    if (!confirmRemoveAdmin) return;
+    const { id } = confirmRemoveAdmin;
+    setConfirmRemoveAdmin(null);
+    const res = await fetch(`/api/admin/admins/${id}`, { method:'DELETE', headers: await authHeaders() });
     if (res.ok) { toast('Removed', 'default'); load('team'); }
     else        { toast('Failed', 'error'); }
   };
+
+  /* How many tier rules are set — badges the Feed tab so an operator can see
+     the feed is weighted without opening it. Plain const, not a hook: this sits
+     below the guard early-returns above, where hook order must not change. */
+  const feedRuleCount = feed ? countRules(feed) : 0;
 
   /* ── TABS ──────────────────────────────────────────────────────── */
   const TABS: { key: Tab; label: string }[] = [
@@ -678,6 +852,8 @@ export default function AdminDashboard() {
       { key:'agents'     as Tab, label: pendingAgents > 0 ? `🧑‍💼 Agents (${pendingAgents})` : '🧑‍💼 Agents' },
       { key:'payouts'    as Tab, label: payoutTotals.pendingCount > 0 ? `💸 Payouts (${payoutTotals.pendingCount})` : '💸 Payouts' },
       { key:'storefront' as Tab, label:'🎨 Storefront' },
+      { key:'feed'       as Tab, label: feedRuleCount > 0 ? `🎚️ Feed (${feedRuleCount})` : '🎚️ Feed' },
+      { key:'exports'    as Tab, label:'📥 Exports' },
       { key:'team'       as Tab, label:'👑 Team' },
     ] : []),
   ];
@@ -1530,6 +1706,286 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* ── DATA EXPORTS (admin only) ───────────────────────── */}
+            {tab === 'exports' && isAdmin && (
+              <div style={{ maxWidth: 720 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: '1rem' }}>📥 Data Exports</div>
+                  <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>
+                    Download every store&apos;s books as CSV — sales, what they sold line by line, and their credit ledger.
+                    One folder per store inside the archive, so each business&apos;s data can be handed back on its own.
+                  </div>
+                </div>
+
+                <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', padding:16 }}>
+                  {/* Store */}
+                  <div className="form-group">
+                    <label className="form-label">Store</label>
+                    <select className="form-input" value={exportStoreId}
+                      onChange={e => setExportStoreId(Number(e.target.value))}>
+                      <option value={0}>All stores ({sortedBusinesses.length})</option>
+                      {sortedBusinesses.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Period */}
+                  <div className="form-group">
+                    <label className="form-label">Period</label>
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                      {([
+                        { k:'day',    label:'Today'      },
+                        { k:'week',   label:'This week'  },
+                        { k:'month',  label:'This month' },
+                        { k:'year',   label:'This year'  },
+                        { k:'all',    label:'All time'   },
+                        { k:'custom', label:'Exact dates'},
+                      ] as const).map(p => (
+                        <button key={p.k} type="button"
+                          className={`btn btn-sm ${exportPeriod === p.k ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => setExportPeriod(p.k)}>
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {exportPeriod === 'custom' && (
+                    <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                      <div className="form-group" style={{ flex:'1 1 160px' }}>
+                        <label className="form-label">From</label>
+                        <input type="date" className="form-input" value={exportFrom}
+                          max={exportTo || undefined}
+                          onChange={e => setExportFrom(e.target.value)} />
+                      </div>
+                      <div className="form-group" style={{ flex:'1 1 160px' }}>
+                        <label className="form-label">To</label>
+                        <input type="date" className="form-input" value={exportTo}
+                          min={exportFrom || undefined}
+                          onChange={e => setExportTo(e.target.value)} />
+                      </div>
+                      <p style={{ fontSize:'.72rem', color:'var(--text-muted)', flexBasis:'100%', marginTop:-4 }}>
+                        Both dates are included, and days are counted in Mogadishu time (UTC+3).
+                      </p>
+                    </div>
+                  )}
+
+                  <button className="btn btn-primary btn-full btn-lg" onClick={runExport} disabled={exporting}>
+                    {exporting
+                      ? 'Building archive…'
+                      : exportStoreId
+                        ? '⬇️ Download this store'
+                        : `⬇️ Download all ${sortedBusinesses.length} stores`}
+                  </button>
+                  {exporting && (
+                    <p style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:8, textAlign:'center' }}>
+                      Large exports take a moment — the file saves when it is ready.
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ ...alertBox('info'), marginTop:14, fontSize:'.78rem' }}>
+                  Each store folder contains <code>dashboard.csv</code>, <code>orders.csv</code>,{' '}
+                  <code>items-sold.csv</code>, <code>customers-owed.csv</code>, <code>invoices.csv</code> and{' '}
+                  <code>payments-received.csv</code>, plus a cross-store <code>all-stores-summary.csv</code> at the top level.
+                  Cancelled, refunded and deleted orders are included but flagged so they never inflate revenue.
+                </div>
+              </div>
+            )}
+
+            {/* ── FEED CONTROLS (admin only) ──────────────────────── */}
+            {tab === 'feed' && isAdmin && (
+              <div style={{ maxWidth: 860 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: '1rem' }}>🎚️ Feed Controls</div>
+                  <div style={{ fontSize: '.8rem', color: 'var(--text-muted)' }}>
+                    Decide what surfaces first on the <strong>Explore</strong> page. Cheap or bulk items can be pushed down; priority items drawn up.
+                    Search, store profiles and similar-products are <strong>not</strong> affected — <em>Hidden</em> only removes a product from Explore discovery, it stays searchable and still shows on its store&apos;s page.
+                  </div>
+                </div>
+
+                {!feed ? (
+                  <div style={{ display:'flex', justifyContent:'center', padding:60 }}><div className="spinner" style={{ width:32, height:32 }} /></div>
+                ) : (
+                  <>
+                    {/* Global cap */}
+                    <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', padding:16, marginBottom:14 }}>
+                      <div style={{ fontWeight:700, fontSize:'.9rem', marginBottom:4 }}>Store diversity cap</div>
+                      <div style={{ fontSize:'.78rem', color:'var(--text-muted)', marginBottom:10 }}>
+                        The hard limit on how many cards one store may occupy in any 10 in a row. This applies <strong>regardless</strong> of the tiers below, so a store with 500 products can never take over the grid.
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                        <input type="range" min={1} max={9} step={1}
+                          value={feed.capPer10 ?? DEFAULT_CAP_PER_10}
+                          onChange={e => setFeed(f => ({ ...(f ?? EMPTY_TIERS), capPer10: Number(e.target.value) }))}
+                          style={{ flex:1, minWidth:180 }} />
+                        <span style={{ fontWeight:700, fontSize:'.85rem', whiteSpace:'nowrap' }}>
+                          max {feed.capPer10 ?? DEFAULT_CAP_PER_10} of every 10
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Section switcher */}
+                    <div style={{ display:'flex', gap:6, marginBottom:12, flexWrap:'wrap' }}>
+                      {([
+                        { k:'stores',     label:`🏪 Stores (${Object.keys(feed.stores ?? {}).length})` },
+                        { k:'categories', label:`🗂️ Categories (${Object.keys(feed.categories ?? {}).length + Object.keys(feed.subs ?? {}).length})` },
+                        { k:'products',   label:`📦 Products (${Object.keys(feed.products ?? {}).length})` },
+                      ] as const).map(s => (
+                        <button key={s.k} onClick={() => setFeedSection(s.k)}
+                          className={`btn btn-sm ${feedSection === s.k ? 'btn-primary' : 'btn-secondary'}`}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', overflow:'hidden' }}>
+                      {/* STORES */}
+                      {feedSection === 'stores' && (
+                        <>
+                          <div style={{ padding:12, borderBottom:'1px solid var(--border)' }}>
+                            <input className="form-input" placeholder="Search stores…" value={feedStoreQuery}
+                              onChange={e => setFeedStoreQuery(e.target.value)} />
+                          </div>
+                          <div style={{ maxHeight:460, overflowY:'auto' }}>
+                            <table style={tbl}>
+                              <thead><tr><th style={th}>Store</th><th style={th}>Priority</th></tr></thead>
+                              <tbody>
+                                {sortedBusinesses
+                                  .filter(b => !feedStoreQuery.trim() || b.name.toLowerCase().includes(feedStoreQuery.trim().toLowerCase()))
+                                  .map(b => (
+                                  <tr key={b.id}>
+                                    <td style={td}>
+                                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                                        <span style={{ width:26, height:26, flexShrink:0 }}>
+                                          <StoreAvatar value={b.icon} alt={b.name} />
+                                        </span>
+                                        <span style={{ fontWeight:600 }}>{b.name}</span>
+                                        {b.verified && <span title="Verified" style={{ fontSize:'.75rem' }}>✅</span>}
+                                      </div>
+                                    </td>
+                                    <td style={{ ...td, width:160 }}>
+                                      <TierSelect value={feedTierOf('stores', b.id)} onChange={t => setFeedTier('stores', b.id, t)} />
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+
+                      {/* CATEGORIES + SUBCATEGORIES */}
+                      {feedSection === 'categories' && (
+                        <div style={{ maxHeight:520, overflowY:'auto' }}>
+                          <div style={{ ...alertBox('info'), margin:12, fontSize:'.78rem' }}>
+                            A subcategory beats its parent category. Setting <strong>Seasonings → Low</strong> sinks every seasoning without touching the rest of Food — and without editing 400 products.
+                          </div>
+                          <table style={tbl}>
+                            <thead><tr><th style={th}>Category</th><th style={th}>Priority</th></tr></thead>
+                            <tbody>
+                              {CATEGORIES.map(c => (
+                                <React.Fragment key={c.id}>
+                                  <tr>
+                                    <td style={{ ...td, fontWeight:700 }}>{c.icon} {c.name}</td>
+                                    <td style={{ ...td, width:160 }}>
+                                      <TierSelect value={feedTierOf('categories', c.id)} onChange={t => setFeedTier('categories', c.id, t)} />
+                                    </td>
+                                  </tr>
+                                  {(SUBCATEGORIES[c.id] ?? []).map(s => (
+                                    <tr key={`${c.id}/${s.id}`}>
+                                      <td style={{ ...td, paddingLeft:34, color:'var(--text-muted)' }}>↳ {s.icon} {s.name}</td>
+                                      <td style={{ ...td, width:160 }}>
+                                        <TierSelect value={feedTierOf('subs', s.id)} onChange={t => setFeedTier('subs', s.id, t)} />
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </React.Fragment>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* PRODUCT OVERRIDES */}
+                      {feedSection === 'products' && (
+                        <>
+                          <div style={{ padding:12, borderBottom:'1px solid var(--border)' }}>
+                            <input className="form-input" placeholder="Search a product by name or SKU to override…" value={feedProdQuery}
+                              onChange={e => setFeedProdQuery(e.target.value)} />
+                            <p style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:6 }}>
+                              A product override wins over its subcategory, category and store. Products already carrying an override are listed first.
+                            </p>
+                          </div>
+                          <div style={{ maxHeight:460, overflowY:'auto' }}>
+                            <table style={tbl}>
+                              <thead><tr><th style={th}>Product</th><th style={th}>Store</th><th style={th}>Priority</th></tr></thead>
+                              <tbody>
+                                {(() => {
+                                  const q = feedProdQuery.trim().toLowerCase();
+                                  const overridden = products.filter(p => feedTierOf('products', p.id) !== 'normal');
+                                  const matches = q
+                                    ? products.filter(p =>
+                                        feedTierOf('products', p.id) === 'normal' &&
+                                        (p.name.toLowerCase().includes(q) || (p.sku ?? '').toLowerCase().includes(q)))
+                                      .slice(0, 50)
+                                    : [];
+                                  const rows = [...overridden, ...matches];
+                                  if (!rows.length) {
+                                    return (
+                                      <tr><td style={{ ...td, color:'var(--text-muted)' }} colSpan={3}>
+                                        {q ? 'No products match that search.' : 'No product overrides set. Search above to add one.'}
+                                      </td></tr>
+                                    );
+                                  }
+                                  return rows.map(p => (
+                                    <tr key={p.id}>
+                                      <td style={td}>
+                                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                                          <span style={{ width:30, height:30, flexShrink:0 }}>
+                                            <ProductImage imageUrl={p.imageUrl} imageUrls={p.imageUrls} name={p.name} />
+                                          </span>
+                                          <div>
+                                            <div style={{ fontWeight:600 }}>{p.name}</div>
+                                            <div style={{ fontSize:'.72rem', color:'var(--text-muted)' }}>{p.sku}</div>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td style={{ ...td, fontSize:'.78rem', color:'var(--text-muted)' }}>
+                                        {businesses.find(b => b.id === p.supplierId)?.name ?? '—'}
+                                      </td>
+                                      <td style={{ ...td, width:160 }}>
+                                        <TierSelect value={feedTierOf('products', p.id)} onChange={t => setFeedTier('products', p.id, t)} />
+                                      </td>
+                                    </tr>
+                                  ));
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div style={{ display:'flex', gap:10, alignItems:'center', marginTop:14, flexWrap:'wrap' }}>
+                      <button className="btn btn-primary btn-lg" style={{ flex:1, minWidth:200 }} onClick={saveFeed} disabled={savingFeed}>
+                        {savingFeed ? 'Saving…' : `Save Feed Rules${feedRuleCount ? ` (${feedRuleCount})` : ''}`}
+                      </button>
+                      {feedRuleCount > 0 && (
+                        <button className="btn btn-ghost btn-sm" style={{ color:'var(--danger)' }} onClick={clearFeedRules}>
+                          Clear all rules
+                        </button>
+                      )}
+                    </div>
+                    <p style={{ fontSize:'.72rem', color:'var(--text-muted)', marginTop:8 }}>
+                      Saving goes live for every shopper immediately. Needs <code>migration_v4_8.sql</code> to have been run.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* ── TEAM (admin only) ───────────────────────────────── */}
             {tab === 'team' && isAdmin && (
               <div>
@@ -1710,6 +2166,52 @@ export default function AdminDashboard() {
               <div style={{ display:'flex', gap:10 }}>
                 <button className="btn btn-outline btn-lg" style={{ flex:1 }} onClick={() => setConfirmDeleteProd(null)}>Cancel</button>
                 <button className="btn btn-danger btn-lg" style={{ flex:1 }} onClick={doDeleteProd}>Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm delete BUSINESS ────────────────────────────────── */}
+      {confirmDeleteBiz && isAdmin && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteBiz(null)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth:420 }}>
+            <div className="modal-header">
+              <span>🗑️ Delete business</span>
+              <button className="modal-close" onClick={() => setConfirmDeleteBiz(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom:10, lineHeight:1.5 }}>
+                Delete <strong>{confirmDeleteBiz.name}</strong>? This cannot be undone.
+              </p>
+              <div style={{ ...alertBox('danger'), fontSize:'.8rem', marginBottom:18 }}>
+                Their storefront, and their link to any products they uploaded, go with them.
+              </div>
+              <div style={{ display:'flex', gap:10 }}>
+                <button className="btn btn-outline btn-lg" style={{ flex:1 }} onClick={() => setConfirmDeleteBiz(null)}>Cancel</button>
+                <button className="btn btn-danger btn-lg" style={{ flex:1 }} onClick={doDeleteBiz}>Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm remove ADMIN ───────────────────────────────────── */}
+      {confirmRemoveAdmin && isAdmin && (
+        <div className="modal-overlay" onClick={() => setConfirmRemoveAdmin(null)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth:420 }}>
+            <div className="modal-header">
+              <span>👑 Remove team member</span>
+              <button className="modal-close" onClick={() => setConfirmRemoveAdmin(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom:18, lineHeight:1.5 }}>
+                Remove <strong>{confirmRemoveAdmin.name || confirmRemoveAdmin.userId}</strong> from the admin team?
+                They lose access to this panel immediately.
+              </p>
+              <div style={{ display:'flex', gap:10 }}>
+                <button className="btn btn-outline btn-lg" style={{ flex:1 }} onClick={() => setConfirmRemoveAdmin(null)}>Cancel</button>
+                <button className="btn btn-danger btn-lg" style={{ flex:1 }} onClick={doRemoveAdmin}>Remove</button>
               </div>
             </div>
           </div>

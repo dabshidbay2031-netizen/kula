@@ -147,8 +147,15 @@ function ProductCard({
           <div
             style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 3 }}
           >
-            🏪 {storeName}
-            {storeVerified && <span title="Verified store" style={{ color: 'var(--primary)', flexShrink: 0 }}>✓</span>}
+            {/* The badge leads the name: it qualifies the store, so it has to be
+                read BEFORE it. Trailing it also risked being the first thing cut
+                by the ellipsis on a long store name — the shopper would lose
+                exactly the signal that says this seller is trustworthy. */}
+            {storeVerified
+              ? <span title="Verified store" aria-label="Verified store"
+                      style={{ color: 'var(--primary)', flexShrink: 0, fontSize: '.82rem' }}>✅</span>
+              : <span aria-hidden="true" style={{ flexShrink: 0 }}>🏪</span>}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{storeName}</span>
           </div>
         )}
         {storeOnlineOnly ? (

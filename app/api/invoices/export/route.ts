@@ -2,14 +2,16 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { errMsg } from '@/lib/apiHelpers';
 import { requireSupplierAccess } from '@/lib/apiAuth';
-import { currentPeriodRange, type Period } from '@/lib/dashboardPeriod';
+import { resolveExportRange, rangeSlug } from '@/lib/dashboardPeriod';
 import {
   summarise, summaryCsv, detailCsv, paymentsCsv, exportFileName,
   type ExportInvoice, type ExportCustomer, type ExportPayment,
 } from '@/lib/creditExport';
 
 /**
- * GET /api/invoices/export?supplierId=X&period=day|week|month|year|all&shape=summary|detail
+ * GET /api/invoices/export?supplierId=X&shape=summary|detail|payments
+ *      &period=day|week|month|year|all   — a whole calendar period, OR
+ *      &from=YYYY-MM-DD&to=YYYY-MM-DD    — an exact window (`to` inclusive)
  *
  * Downloads the store's credit ledger as CSV so the shop can keep its own copy
  * — the ledger is money they are owed, and "what if we lose it" is the single
@@ -19,8 +21,6 @@ import {
  * supplier_id filter). A credit book is the most sensitive list a shop has;
  * this endpoint must never be a way to read someone else's.
  */
-const PERIODS = new Set(['day', 'week', 'month', 'year', 'all']);
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const supplierId = parseInt(searchParams.get('supplierId') ?? '', 10);
@@ -32,10 +32,14 @@ export async function GET(req: Request) {
   const denied = await requireSupplierAccess(req, supplierId, 'customers');
   if (denied) return denied;
 
-  const periodRaw = String(searchParams.get('period') ?? 'month').toLowerCase();
-  if (!PERIODS.has(periodRaw)) {
-    return NextResponse.json({ error: 'period must be day, week, month, year or all' }, { status: 400 });
-  }
+  // period=… for a whole calendar period, or from=&to= for an exact window.
+  const range = resolveExportRange({
+    period: searchParams.get('period'),
+    from:   searchParams.get('from'),
+    to:     searchParams.get('to'),
+  });
+  if ('error' in range) return NextResponse.json({ error: range.error }, { status: 400 });
+
   const shapeRaw = String(searchParams.get('shape') ?? 'summary');
   const shape: 'summary' | 'detail' | 'payments' =
     shapeRaw === 'detail' ? 'detail' : shapeRaw === 'payments' ? 'payments' : 'summary';
@@ -50,13 +54,11 @@ export async function GET(req: Request) {
       .eq('supplier_id', supplierId)
       .order('created_at', { ascending: false });
 
-    // 'all' deliberately has no lower bound — a backup of "everything we are
-    // owed" is the whole point, and old debt is exactly what gets forgotten.
-    let label = 'all';
-    if (periodRaw !== 'all') {
-      const range = currentPeriodRange(periodRaw as Period);
+    // An unbounded range ('all') deliberately has no lower bound — a backup of
+    // "everything we are owed" is the whole point, and old debt is exactly what
+    // gets forgotten.
+    if (range.start && range.end) {
       q = q.gte('created_at', range.start.toISOString()).lt('created_at', range.end.toISOString());
-      label = periodRaw;
     }
 
     const { data, error } = await q;
@@ -98,7 +100,7 @@ export async function GET(req: Request) {
 
     const { data: store } = await sb
       .from('suppliers').select('name').eq('id', supplierId).maybeSingle();
-    const filename = exportFileName(String(store?.name ?? 'store'), label, new Date());
+    const filename = exportFileName(String(store?.name ?? 'store'), rangeSlug(range), new Date());
 
     return new NextResponse(csv, {
       status: 200,
