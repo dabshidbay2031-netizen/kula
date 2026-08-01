@@ -39,6 +39,33 @@ export default function BarcodeScanner({ onDetected, onClose, title = 'Scan Barc
 
     async function startScanner() {
       try {
+        /*
+         * iOS refuses the camera outright on an insecure origin, and the
+         * failure surfaces as a generic getUserMedia rejection — which used to
+         * be reported as "Camera not available", sending people to hunt for a
+         * permission they had already granted. Check first and name the real
+         * cause. `isSecureContext` is true for https:// and for localhost, so
+         * desktop dev is unaffected; testing the phone against a LAN IP over
+         * http:// is the case this catches.
+         */
+        if (typeof window !== 'undefined' && !window.isSecureContext) {
+          if (mounted) {
+            setStatus('error');
+            setErrorMsg(
+              'The camera only works over a secure (https) connection. '
+              + 'Open the site with https, or type the barcode in below.',
+            );
+          }
+          return;
+        }
+        if (!navigator.mediaDevices?.getUserMedia) {
+          if (mounted) {
+            setStatus('error');
+            setErrorMsg('This browser cannot open the camera. Enter the barcode manually below.');
+          }
+          return;
+        }
+
         const { Html5Qrcode } = await import('html5-qrcode');
         const scanner = new Html5Qrcode('barcode-reader');
         scannerRef.current = scanner;

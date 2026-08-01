@@ -21,7 +21,20 @@
  * so the app opens in ~2.5s at worst, and instantly with no connection at all.
  */
 
-const CACHE = 'hamarmall-shell-v3';
+/*
+ * BUMP THIS on any release that changes the app shell's CSS or markup.
+ *
+ * `activate` deletes every hamarmall-shell-* cache that isn't this one, so a
+ * new name is what forces an installed phone onto the new build. Without a
+ * bump the worker keeps answering navigations from the OLD cached shell — and
+ * that shell references the OLD hashed /_next/static CSS, which is also
+ * cached — so a device can sit on stale styling indefinitely no matter how
+ * many times the site is redeployed. That is exactly how a CSS fix can look
+ * "not applied" on a home-screen install while being correct in the repo.
+ *
+ * v4: status-bar inset, single-scroller fix, sidebar-collapse width.
+ */
+const CACHE = 'hamarmall-shell-v4';
 const OFFLINE_URL  = '/';
 const OFFLINE_PAGE = '/offline.html';
 const PRECACHE = ['/', OFFLINE_PAGE, '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];

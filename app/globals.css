@@ -36,11 +36,14 @@
      of them to --nav-h alone leaves out the home-indicator inset and hides
      them behind the nav. Reset to 0 on desktop (no bottom nav). */
   --app-pad-b:     calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
-  /* The status-bar / notch inset, plus a small cushion. iOS reports the inset
-     as ending EXACTLY where the clock ends, so honouring it alone leaves the
-     logo touching the clock with no visual gap. The extra 6px is the breathing
-     room. 0 + 6px on any device without a notch, which is harmless. */
-  --safe-top:      calc(env(safe-area-inset-top, 0px) + 6px);
+  /* Just the cushion — no env() in here.
+     Rules that need the status-bar inset write `env(safe-area-inset-top)`
+     INLINE and add this on top. Keeping env() out of the variable is defensive:
+     env() resolution inside custom properties has been inconsistent across
+     Safari versions, and the inline form is unambiguous everywhere. (Note
+     --app-pad-b below still nests env(); it has worked reliably in practice,
+     so it is left alone rather than churned without evidence.) */
+  --safe-top-pad:  6px;
   /* Motion system — durations + easings */
   --dur-fast:      .15s;
   --dur:           .25s;
@@ -148,17 +151,18 @@ ul { list-style: none; }
  * Fixed by moving the STICKY ANCHOR down, not by growing the bar. A sticky
  * element is free to rest at its natural position when that position is
  * already further down the page than `top`, but it will never render CLOSER
- * to the scroll-container edge than `top` allows — so `top: var(--safe-top)`
+ * to the scroll-container edge than `top` allows — so an inset `top`
  * (instead of `top: 0`) keeps the header exactly its normal height and simply
  * refuses to sit above that line, both on load and while scrolling. `height`
  * and `padding-top` stay untouched — this is the "just push it down a little"
  * version of the fix, not the "grow the bar" version.
- * `--safe-top` is 0 + a small cushion on any device without a notch, so
+ * env() is written INLINE here, never via a custom property — see the note on
+ * --safe-top-pad in :root. It resolves to 0 on any device without a notch, so
  * nothing changes on Android or desktop.
  */
 .header {
   position: sticky;
-  top: var(--safe-top);
+  top: calc(env(safe-area-inset-top, 0px) + var(--safe-top-pad));
   z-index: 100;
   background: rgba(255,255,255,.82);
   border-bottom: 1px solid var(--border);
@@ -1692,7 +1696,7 @@ ul { list-style: none; }
      screen ≥960px wide. Harmless on real desktops (no notch), but kept
      consistent so a notched device that happens to be this wide isn't
      affected either. */
-  .header { position: sticky; top: var(--safe-top); }
+  .header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--safe-top-pad)); }
 
   /* ── Product detail: 2-column ── */
   .detail-wrap {
@@ -4567,8 +4571,9 @@ img, svg, video, canvas { max-width: 100%; }
   left: 0;
   /* The drawer is full-height, so its first item would otherwise start beneath
      the clock on a notched iPhone. Padding rather than `top`, so the panel's
-     background still runs edge to edge behind the status bar. */
-  padding-top: var(--safe-top);
+     background still runs edge to edge behind the status bar.
+     env() inline, never via a custom property — see :root. */
+  padding-top: calc(env(safe-area-inset-top, 0px) + var(--safe-top-pad));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   z-index: 300;
   width: 280px;
@@ -4883,6 +4888,20 @@ img, svg, video, canvas { max-width: 100%; }
   .route-anim { overflow-x: clip; max-width: 100%; }
 }
 
+/* iOS 15 and earlier (Safari < 16) do not know `overflow: clip` at all — the
+   declaration is invalid there, so it is dropped and horizontal containment
+   silently disappears, letting pages slide sideways on older iPhones.
+   Those versions DO support `hidden`, so fall back to it. The nested-scroller
+   side effect described above is acceptable here because it is scoped to the
+   page wrappers on a browser that has no better option; html/body deliberately
+   keep `clip` only, so the single-scroller fix still holds where it can. */
+@supports not (overflow: clip) {
+  @media (max-width: 959px) {
+    .page-anim  { overflow-x: hidden; max-width: 100%; }
+    .route-anim { overflow-x: hidden; max-width: 100%; }
+  }
+}
+
 /* ── Touch targets ≥ 44×44px for more elements ──────────────── */
 @media (hover: none) and (pointer: coarse) {
   .menu-btn          { min-width: 44px; min-height: 44px; }
@@ -5077,13 +5096,14 @@ img, svg, video, canvas { max-width: 100%; }
 /* ══════════════════════════════════════════════════════════════════════
    STATUS-BAR INSET — authoritative, must stay LAST in this file
    ══════════════════════════════════════════════════════════════════════
-   .header itself no longer needs an entry here — it clears the notch via
-   `top: var(--safe-top)` on the base rule (a sticky element's anchor point,
-   not its box size), which isn't a shorthand and so isn't at risk of being
-   silently reset by the per-breakpoint `padding: 0 Npx` rules the way
-   padding-top was. Height and padding stay exactly what they'd be with no
-   notch at all — this only stops the bar from sitting ABOVE that line.
+   .header itself no longer needs an entry here — it clears the notch via an
+   inset `top` on the base rule (a sticky element's anchor point, not its box
+   size), which isn't a shorthand and so isn't at risk of being silently reset
+   by the per-breakpoint `padding: 0 Npx` rules the way padding-top was.
+   Height and padding stay exactly what they'd be with no notch at all — this
+   only stops the bar from sitting ABOVE that line.
 
    The mobile drawer is a different shape (a fixed full-height panel, not a
-   sticky bar) and still needs its first item pushed down explicitly. */
-.mobile-menu { padding-top: var(--safe-top); }
+   sticky bar) and still needs its first item pushed down explicitly.
+   env() written inline, never through a custom property — see :root. */
+.mobile-menu { padding-top: calc(env(safe-area-inset-top, 0px) + var(--safe-top-pad)); }
