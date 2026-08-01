@@ -36,6 +36,11 @@
      of them to --nav-h alone leaves out the home-indicator inset and hides
      them behind the nav. Reset to 0 on desktop (no bottom nav). */
   --app-pad-b:     calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  /* The status-bar / notch inset, plus a small cushion. iOS reports the inset
+     as ending EXACTLY where the clock ends, so honouring it alone leaves the
+     logo touching the clock with no visual gap. The extra 6px is the breathing
+     room. 0 + 6px on any device without a notch, which is harmless. */
+  --safe-top:      calc(env(safe-area-inset-top, 0px) + 6px);
   /* Motion system — durations + easings */
   --dur-fast:      .15s;
   --dur:           .25s;
@@ -152,8 +157,8 @@ ul { list-style: none; }
   z-index: 100;
   background: rgba(255,255,255,.82);
   border-bottom: 1px solid var(--border);
-  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(var(--header-h) + var(--safe-top));
+  padding-top: var(--safe-top);
   display: flex;
   align-items: center;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
@@ -1506,8 +1511,11 @@ ul { list-style: none; }
 
 /* ── Responsive: tablet+ ───────────────────────── */
 @media (min-width: 640px) and (max-width: 959px) {
-  .product-grid { grid-template-columns: repeat(3, 1fr); }
-  .pos-grid { grid-template-columns: repeat(3, 1fr); }
+  /* auto-fill, not a fixed count: the column count then follows the space
+     actually available, so collapsing the sidebar turns the freed ~260px into
+     MORE CARDS instead of four over-wide ones with dead space beside them. */
+  .product-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .pos-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .stats-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
@@ -1659,9 +1667,12 @@ ul { list-style: none; }
   /* ── Toast positioning ── */
   .toast-container { right: 24px; bottom: 24px; max-width: 360px; }
 
-  /* ── Grids: more columns ── */
-  .product-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
-  .pos-grid { grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  /* ── Grids: more columns ──
+     Same auto-fill rule as the smaller breakpoint, just a slightly larger
+     minimum so cards don't get thin on a wide monitor. Collapsing the sidebar
+     adds columns here rather than stretching the existing ones. */
+  .product-grid { grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 16px; }
+  .pos-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
   .stats-grid { grid-template-columns: repeat(4, 1fr); }
 
   /* ── Content max-width and padding ── */
@@ -4539,6 +4550,11 @@ img, svg, video, canvas { max-width: 100%; }
   top: 0;
   bottom: 0;
   left: 0;
+  /* The drawer is full-height, so its first item would otherwise start beneath
+     the clock on a notched iPhone. Padding rather than `top`, so the panel's
+     background still runs edge to edge behind the status bar. */
+  padding-top: var(--safe-top);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   z-index: 300;
   width: 280px;
   max-width: 84vw;
@@ -5019,3 +5035,41 @@ img, svg, video, canvas { max-width: 100%; }
   .product-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .pos-grid     { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   GRID COLUMN COUNT — authoritative, must stay near the END of this file
+   ══════════════════════════════════════════════════════════════════════
+   Collapsing the sidebar frees ~220px. With a FIXED column count that space
+   just inflated the existing cards (or sat empty beside them); `auto-fill`
+   turns it into additional cards, which is the point of collapsing.
+
+   POSITION MATTERS. There are six `.product-grid` declarations in this file
+   and several set a fixed `repeat(N, 1fr)` at tablet/desktop widths further
+   down. All have the same specificity, so the LAST one wins — an auto-fill
+   rule written higher up is silently overridden. Measured: written at the
+   960px breakpoint alone, the grid still reported 3 columns after collapse.
+
+   Mobile is deliberately untouched: it keeps its fixed 2-up layout. */
+@media (min-width: 960px) {
+  .product-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .pos-grid     { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+@media (min-width: 1200px) {
+  .product-grid { grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); }
+  .pos-grid     { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   STATUS-BAR INSET — authoritative, must stay LAST in this file
+   ══════════════════════════════════════════════════════════════════════
+   Seven responsive rules further up set `.header { padding: 0 Npx }` using the
+   SHORTHAND, and a shorthand resets padding-top to 0. So the inset declared on
+   the base .header rule was being wiped at every breakpoint — including
+   max-width:479px, which is the one an iPhone matches. Result: the logo and
+   search box sat underneath the clock and the Dynamic Island.
+
+   Re-declared here as a LONGHAND so it wins on source order without touching
+   the per-breakpoint horizontal padding those rules exist to set.
+   Verified: computed padding-top was 0px before this block. */
+.header      { padding-top: var(--safe-top); }
+.mobile-menu { padding-top: var(--safe-top); }
