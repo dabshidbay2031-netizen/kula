@@ -142,28 +142,31 @@ ul { list-style: none; }
 /*
  * The app is served with `viewport-fit=cover` and an iOS status bar style of
  * `black-translucent`, which together tell iOS to draw the page UNDERNEATH the
- * status bar. That is only correct if the top inset is paid back — otherwise
- * the clock, battery and Dynamic Island sit on top of the logo and search box
- * on every notched iPhone. The bottom inset was always handled (--app-pad-b);
- * the top never was.
+ * status bar, so the clock/Dynamic Island can otherwise sit on top of the logo
+ * and search box on a notched iPhone.
  *
- * `height` becomes the content height PLUS the inset, so the bar grows rather
- * than squashing what is inside it. `env()` is 0 on every device without a
- * notch, so nothing changes on Android or desktop.
+ * Fixed by moving the STICKY ANCHOR down, not by growing the bar. A sticky
+ * element is free to rest at its natural position when that position is
+ * already further down the page than `top`, but it will never render CLOSER
+ * to the scroll-container edge than `top` allows — so `top: var(--safe-top)`
+ * (instead of `top: 0`) keeps the header exactly its normal height and simply
+ * refuses to sit above that line, both on load and while scrolling. `height`
+ * and `padding-top` stay untouched — this is the "just push it down a little"
+ * version of the fix, not the "grow the bar" version.
+ * `--safe-top` is 0 + a small cushion on any device without a notch, so
+ * nothing changes on Android or desktop.
  */
 .header {
   position: sticky;
-  top: 0;
+  top: var(--safe-top);
   z-index: 100;
   background: rgba(255,255,255,.82);
   border-bottom: 1px solid var(--border);
-  height: calc(var(--header-h) + var(--safe-top));
-  padding-top: var(--safe-top);
+  height: var(--header-h);
   display: flex;
   align-items: center;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-bottom: 0;
   gap: 12px;
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
@@ -1636,7 +1639,14 @@ ul { list-style: none; }
     transition: transform .22s var(--ease-out);
   }
   html[data-sidebar="hidden"] .sidebar { transform: translateX(-100%); }
-  html[data-sidebar="hidden"] #app    { margin-left: 0; }
+  /* max-width, not just margin-left: the 1024px/1440px breakpoints below also
+     set `#app { max-width: calc(100% - Npx) }` to match the sidebar's width.
+     Resetting only margin-left left that cap in place, so the freed space
+     just became a dead gap on the right — #app was capped to the same width
+     as when the sidebar was open, it had simply moved to hug the left edge.
+     Found by walking the live ancestor chain: margin-left read 0px, and
+     max-width still read "calc(100% - 240px)" in the same box. */
+  html[data-sidebar="hidden"] #app { margin-left: 0; max-width: none; }
   html[data-sidebar="hidden"] .install-prompt { left: 20px; }
 
 
@@ -1677,7 +1687,12 @@ ul { list-style: none; }
 
   /* ── Content max-width and padding ── */
   .page-anim { padding-bottom: 32px; }
-  .header { position: sticky; top: 0; }
+  /* Same specificity as the base .header rule and later in the file, so this
+     used to win and silently reset the status-bar offset back to 0 on any
+     screen ≥960px wide. Harmless on real desktops (no notch), but kept
+     consistent so a notched device that happens to be this wide isn't
+     affected either. */
+  .header { position: sticky; top: var(--safe-top); }
 
   /* ── Product detail: 2-column ── */
   .detail-wrap {
@@ -5062,14 +5077,13 @@ img, svg, video, canvas { max-width: 100%; }
 /* ══════════════════════════════════════════════════════════════════════
    STATUS-BAR INSET — authoritative, must stay LAST in this file
    ══════════════════════════════════════════════════════════════════════
-   Seven responsive rules further up set `.header { padding: 0 Npx }` using the
-   SHORTHAND, and a shorthand resets padding-top to 0. So the inset declared on
-   the base .header rule was being wiped at every breakpoint — including
-   max-width:479px, which is the one an iPhone matches. Result: the logo and
-   search box sat underneath the clock and the Dynamic Island.
+   .header itself no longer needs an entry here — it clears the notch via
+   `top: var(--safe-top)` on the base rule (a sticky element's anchor point,
+   not its box size), which isn't a shorthand and so isn't at risk of being
+   silently reset by the per-breakpoint `padding: 0 Npx` rules the way
+   padding-top was. Height and padding stay exactly what they'd be with no
+   notch at all — this only stops the bar from sitting ABOVE that line.
 
-   Re-declared here as a LONGHAND so it wins on source order without touching
-   the per-breakpoint horizontal padding those rules exist to set.
-   Verified: computed padding-top was 0px before this block. */
-.header      { padding-top: var(--safe-top); }
+   The mobile drawer is a different shape (a fixed full-height panel, not a
+   sticky bar) and still needs its first item pushed down explicitly. */
 .mobile-menu { padding-top: var(--safe-top); }
