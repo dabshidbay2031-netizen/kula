@@ -81,7 +81,14 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100dvh;
-  overflow-x: hidden;
+  /* `clip`, not `hidden` — same reason as .route-anim further down. With
+     `hidden` here the body's overflow-y computed to `auto`, so BODY became a
+     scroll container in addition to the viewport. Two nested scrollers on one
+     page is what makes touch scrolling unreliable on a phone: the gesture can
+     land on whichever one has nothing left to scroll and the page appears
+     frozen. `clip` leaves overflow-y `visible`, so there is exactly one
+     scroller — the viewport — while horizontal overflow is still contained. */
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 h1, h2, h3, h4, h5, h6,
